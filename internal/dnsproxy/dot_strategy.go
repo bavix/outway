@@ -23,6 +23,6 @@ func (DotStrategy) NewResolver(t, address string, deps StrategyDeps) Resolver {
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		serverName = h
 	}
-	client := &dns.Client{Net: "tcp-tls", TLSConfig: &tls.Config{ServerName: serverName}, Timeout: 5 * time.Second}
+	client := &dns.Client{Net: "tcp-tls", TLSConfig: &tls.Config{ServerName: serverName, MinVersion: tls.VersionTLS13}, Timeout: 5 * time.Second}
 	return &UpstreamResolver{client: client, network: t, address: host}
 }
