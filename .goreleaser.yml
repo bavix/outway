@@ -1,0 +1,128 @@
+version: 2
+project_name: outway
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - id: outway
+    main: .
+    binary: outway
+    goos:
+      - linux
+      - darwin
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+      - arm
+      - 386
+      - mips
+      - mipsle
+      - mips64
+      - mips64le
+    goarm:
+      - 6
+      - 7
+    gomips:
+      - hardfloat
+      - softfloat
+    ignore:
+      # Skip combinations that don't make sense
+      - goos: darwin
+        goarch: arm
+      - goos: darwin
+        goarch: 386
+      - goos: darwin
+        goarch: mips
+      - goos: darwin
+        goarch: mipsle
+      - goos: darwin
+        goarch: mips64
+      - goos: darwin
+        goarch: mips64le
+      - goos: freebsd
+        goarch: arm
+      - goos: freebsd
+        goarch: mips
+      - goos: freebsd
+        goarch: mipsle
+      - goos: freebsd
+        goarch: mips64
+      - goos: freebsd
+        goarch: mips64le
+    flags:
+      - -trimpath
+    ldflags:
+      - -s
+      - -w
+      - -X github.com/bavix/outway/internal/version.Version={{.Version}}
+      - -X github.com/bavix/outway/internal/version.BuildTime={{.Date}}
+    env:
+      - CGO_ENABLED=0
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - config.test.yaml
+checksum:
+  name_template: 'checksums.txt'
+release:
+  github:
+    owner: bavix
+    name: outway
+  draft: true
+  prerelease: auto
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+brews:
+  - name: outway
+    repository:
+      owner: gripmock
+      name: homebrew-tap
+      branch: master
+    directory: Formula
+    homepage: https://github.com/bavix/outway
+    description: "DNS proxy that marks destination IPs and routes by interface"
+    license: "MIT"
+    url_template: "https://github.com/bavix/outway/releases/download/v{{ .Version }}/outway_{{ .Version }}_{{ .Os }}_{{ .Arch }}.tar.gz"
+    commit_author:
+      name: github-actions
+      email: github-actions@users.noreply.github.com
+    commit_msg_template: "Update Outway to {{ .Version }}"
+    test: |
+      assert_match "v#{version}", shell_output("#{bin}/outway version")
+
+# OpenWrt package support (optional - uncomment if needed)
+# nfpms:
+#   - id: outway-openwrt
+#     package_name: outway
+#     maintainer: "bavix <github@bavix.ru>"
+#     homepage: "https://github.com/bavix/outway"
+#     description: "DNS proxy that marks destination IPs and routes by interface"
+#     license: "MIT"
+#     formats:
+#       - ipk
+#     bindir: /usr/bin
+#     contents:
+#       - src: "outway_linux_arm_7"
+#         dst: /usr/bin/outway
+#         file_info:
+#           mode: 0755
+#       - src: config.yaml
+#         dst: /etc/outway/config.yaml
+#       - src: config.test.yaml
+#         dst: /etc/outway/config.test.yaml
+#     scripts:
+#       postinstall: |
+#         #!/bin/sh
+#         /etc/init.d/outway enable
+#         /etc/init.d/outway start
+#       preremove: |
+#         #!/bin/sh
+#         /etc/init.d/outway stop
+#         /etc/init.d/outway disable
