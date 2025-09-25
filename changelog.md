@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.4 - 2025-09-25
+
+### What's Changed
+
+* Refactor update installation process for atomicity and reliability by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/18
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.0.3...v1.0.4
+
 ## v1.0.3 - 2025-09-25
 
 ### What's Changed
