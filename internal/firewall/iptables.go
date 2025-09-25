@@ -3,6 +3,7 @@ package firewall
 import (
 	"context"
 	"fmt"
+	"net"
 	"os/exec"
 	"strconv"
 	"sync"
@@ -20,7 +21,8 @@ type iptablesBackend struct {
 	ifaces map[string]struct{}
 }
 
-func newIPTablesBackend() Backend { //nolint:ireturn
+//nolint:ireturn
+func newIPTablesBackend() Backend {
 	if _, err := exec.LookPath("iptables"); err != nil {
 		return nil
 	}
@@ -47,7 +49,7 @@ func (b *iptablesBackend) MarkIP(ctx context.Context, iface, ip string, ttlSecon
 		ttlSeconds = minTTLSeconds
 	}
 
-	zerolog.Ctx(ctx).Debug().Str("iface", iface).Str("ip", ip).Int("ttl", ttlSeconds).Msg("mark ip")
+	zerolog.Ctx(ctx).Debug().Str("iface", iface).IPAddr("ip", net.ParseIP(ip)).Int("ttl", ttlSeconds).Msg("mark ip")
 	set := setName4(iface)
 
 	cmd := exec.CommandContext(ctx, "ipset", "add", set, ip, "timeout", strconv.Itoa(ttlSeconds), "-exist") //nolint:gosec
@@ -57,7 +59,9 @@ func (b *iptablesBackend) MarkIP(ctx context.Context, iface, ip string, ttlSecon
 	}
 
 	if out, err := cmd.CombinedOutput(); err != nil {
-		zerolog.Ctx(ctx).Warn().Err(err).Str("out", string(out)).Msg("ipset add failed")
+		zerolog.Ctx(ctx).Err(err).Bytes("out", out).Msg("ipset add failed")
+
+		return fmt.Errorf("failed to add IP %s to ipset %s: %w", ip, set, err)
 	}
 
 	return nil

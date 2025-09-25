@@ -2,6 +2,8 @@ package firewall
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"os/exec"
 	"strings"
 	"sync"
@@ -15,7 +17,8 @@ type pfBackend struct {
 	timers map[string]*time.Timer // ip -> timer
 }
 
-func newPFBackend() Backend { //nolint:ireturn
+//nolint:ireturn
+func newPFBackend() Backend {
 	if _, err := exec.LookPath("pfctl"); err != nil {
 		return nil
 	}
@@ -41,11 +44,13 @@ func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int
 	}
 
 	table := pfTableName(iface)
-	zerolog.Ctx(ctx).Debug().Str("iface", iface).Str("ip", ip).Int("ttl", ttlSeconds).Msg("mark ip")
+	zerolog.Ctx(ctx).Debug().Str("iface", iface).IPAddr("ip", net.ParseIP(ip)).Int("ttl", ttlSeconds).Msg("mark ip")
 
 	cmd := exec.CommandContext(ctx, "pfctl", "-t", table, "-T", "add", ip) //nolint:gosec // pfctl is a system utility
 	if out, err := cmd.CombinedOutput(); err != nil {
-		zerolog.Ctx(ctx).Warn().Err(err).Str("out", string(out)).Msg("pfctl add failed")
+		zerolog.Ctx(ctx).Err(err).Bytes("out", out).Msg("pfctl add failed")
+
+		return fmt.Errorf("failed to add IP %s to pfctl table %s: %w", ip, table, err)
 	}
 
 	args := []string{"-n", "add"}
@@ -57,7 +62,9 @@ func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int
 
 	addRoute := exec.CommandContext(ctx, "route", args...)
 	if out, err := addRoute.CombinedOutput(); err != nil {
-		zerolog.Ctx(ctx).Warn().Err(err).Str("out", string(out)).Str("args", strings.Join(args, " ")).Msg("route add failed")
+		zerolog.Ctx(ctx).Err(err).Bytes("out", out).Str("args", strings.Join(args, " ")).Msg("route add failed")
+
+		return fmt.Errorf("failed to add route for IP %s via interface %s: %w", ip, iface, err)
 	}
 	// schedule/delete via cancellable timer (no blocking sleeps)
 	d := time.Duration(ttlSeconds) * time.Second

@@ -23,7 +23,7 @@ func (u *UpstreamResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, s
 		if out, err := u.exchange(q, u.address); err == nil && out != nil {
 			return out, u.network + ":" + u.address, nil
 		} else {
-			zerolog.Ctx(ctx).Error().Err(err).Str("net", u.network).Str("upstream", u.address).Msg("dns upstream doh error")
+			zerolog.Ctx(ctx).Err(err).Str("net", u.network).Str("upstream", u.address).Msg("dns upstream doh error")
 
 			return nil, u.network + ":" + u.address, err
 		}
@@ -35,7 +35,7 @@ func (u *UpstreamResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, s
 
 	out, _, err := u.client.Exchange(q, u.address)
 	if err != nil || out == nil {
-		zerolog.Ctx(ctx).Error().Err(err).Str("net", u.network).Str("upstream", u.address).Msg("dns upstream error")
+		zerolog.Ctx(ctx).Err(err).Str("net", u.network).Str("upstream", u.address).Msg("dns upstream error")
 	}
 
 	return out, u.network + ":" + u.address, err

@@ -191,6 +191,23 @@ const Update = ({ provider }: UpdateProps) => {
     });
   };
 
+  const formatUptime = (uptimeString: string) => {
+    // Parse uptime string like "29m4.372583295s" or "1h23m45s"
+    const match = uptimeString.match(/(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?/);
+    if (!match) return uptimeString;
+    
+    const hours = parseInt(match[1] || '0');
+    const minutes = parseInt(match[2] || '0');
+    const seconds = parseFloat(match[3] || '0');
+    
+    const parts = [];
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (seconds > 0) parts.push(`${Math.floor(seconds)}s`);
+    
+    return parts.join(' ') || '0s';
+  };
+
   useEffect(() => {
     // Load current status
     const loadStatus = async () => {
@@ -226,38 +243,38 @@ const Update = ({ provider }: UpdateProps) => {
       {/* Current Status */}
       <Card>
         <div className="p-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
             Current Version
           </h2>
           {updateStatus ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Version</p>
-                <p className="text-lg font-medium text-gray-900 dark:text-white">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Version</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-white">
                   {updateStatus.current_version}
                 </p>
               </div>
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Build Time</p>
-                <p className="text-lg font-medium text-gray-900 dark:text-white">
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Build Time</p>
+                <p className="text-lg font-semibold text-gray-900 dark:text-white">
                   {formatDate(updateStatus.build_time)}
                 </p>
               </div>
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Uptime</p>
-                <p className="text-lg font-medium text-gray-900 dark:text-white">
-                  {updateStatus.uptime}
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Uptime</p>
+                <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {formatUptime(updateStatus.uptime)}
                 </p>
               </div>
-              <div>
-                <p className="text-sm text-gray-600 dark:text-gray-400">Platform</p>
-                <p className="text-lg font-medium text-gray-900 dark:text-white">
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Platform</p>
+                <p className="text-lg font-semibold text-gray-900 dark:text-white">
                   {updateStatus.platform}
                 </p>
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center py-12">
               <LoadingSpinner />
             </div>
           )}
@@ -267,14 +284,14 @@ const Update = ({ provider }: UpdateProps) => {
       {/* Update Check */}
       <Card>
         <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
               Check for Updates
             </h2>
             <Button
               onClick={checkForUpdates}
               disabled={loading}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 w-full sm:w-auto"
             >
               {loading ? <LoadingSpinner size="sm" /> : null}
               Check for Updates
@@ -284,15 +301,18 @@ const Update = ({ provider }: UpdateProps) => {
           {updateInfo && (
             <div className="space-y-4">
               {updateInfo.has_update ? (
-                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <p className="text-blue-800 dark:text-blue-200 font-medium">
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+                    <p className="text-blue-800 dark:text-blue-200 font-semibold text-lg">
                       Update Available
                     </p>
                   </div>
-                  <p className="text-blue-700 dark:text-blue-300">
-                    New version {updateInfo.latest_version} is available
+                  <p className="text-blue-700 dark:text-blue-300 text-base mb-2">
+                    New version <span className="font-bold">{updateInfo.latest_version}</span> is available
+                  </p>
+                  <p className="text-blue-600 dark:text-blue-400 text-sm">
+                    Current version: {updateInfo.current_version}
                   </p>
                   {updateInfo.release && (
                     <div className="mt-3 space-y-2">
@@ -313,26 +333,26 @@ const Update = ({ provider }: UpdateProps) => {
                   )}
                 </div>
               ) : (
-                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <p className="text-green-800 dark:text-green-200 font-medium">
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-6">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <p className="text-green-800 dark:text-green-200 font-semibold text-lg">
                       You are up to date
                     </p>
                   </div>
-                  <p className="text-green-700 dark:text-green-300">
-                    Running latest version {updateInfo.current_version}
+                  <p className="text-green-700 dark:text-green-300 text-base">
+                    Running latest version <span className="font-bold">{updateInfo.current_version}</span>
                   </p>
                 </div>
               )}
 
               {updateInfo.has_update && (
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3 mt-6">
                   {!downloadedPath ? (
                     <Button
                       onClick={downloadUpdate}
                       disabled={downloading}
-                      className="flex items-center gap-2"
+                      className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium"
                     >
                       {downloading ? <LoadingSpinner size="sm" /> : null}
                       Download Update
@@ -341,7 +361,7 @@ const Update = ({ provider }: UpdateProps) => {
                     <Button
                       onClick={installUpdate}
                       disabled={installing}
-                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700"
+                      className="flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium"
                     >
                       {installing ? <LoadingSpinner size="sm" /> : null}
                       Install Update

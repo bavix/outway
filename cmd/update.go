@@ -59,7 +59,7 @@ func runUpdateCommand(cmd *cobra.Command, args []string) error {
 		BinaryName:     "outway",
 	})
 	if err != nil {
-		log.Error().Err(err).Msg("failed to create updater")
+		log.Err(err).Msg("failed to create updater")
 
 		return fmt.Errorf("failed to create updater: %w", err)
 	}
@@ -69,7 +69,7 @@ func runUpdateCommand(cmd *cobra.Command, args []string) error {
 	// Check for updates
 	updateInfo, err := u.CheckForUpdates(ctx, prerelease)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to check for updates")
+		log.Err(err).Msg("failed to check for updates")
 
 		return fmt.Errorf("failed to check for updates: %w", err)
 	}
@@ -130,7 +130,7 @@ func downloadAndInstallUpdate(ctx context.Context, log zerolog.Logger, u *update
 	// Download update
 	updatePath, err := u.DownloadUpdate(ctx, asset.BrowserDownloadURL)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to download update")
+		log.Err(err).Msg("failed to download update")
 
 		return fmt.Errorf("failed to download update: %w", err)
 	}
@@ -142,7 +142,7 @@ func downloadAndInstallUpdate(ctx context.Context, log zerolog.Logger, u *update
 
 	err = u.InstallUpdate(ctx, updatePath)
 	if err != nil {
-		log.Error().Err(err).Msg("failed to install update")
+		log.Err(err).Msg("failed to install update")
 
 		return fmt.Errorf("failed to install update: %w", err)
 	}

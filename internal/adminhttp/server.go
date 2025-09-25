@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
@@ -516,7 +517,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) { //nolint:cyc
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		// Log the error but don't use http.Error as it conflicts with WebSocket upgrade
-		zerolog.Ctx(r.Context()).Error().Err(err).Msg("WebSocket upgrade failed")
+		zerolog.Ctx(r.Context()).Err(err).Msg("WebSocket upgrade failed")
 
 		return
 	}
@@ -1038,7 +1039,7 @@ func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
 
 	updateInfo, err := s.updater.CheckForUpdates(ctx, includePrerelease)
 	if err != nil {
-		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to check for updates")
+		zerolog.Ctx(ctx).Err(err).Msg("failed to check for updates")
 		render.Status(r, defaultInternalServerErrorStatus)
 		render.JSON(w, r, map[string]string{"error": err.Error()})
 
@@ -1073,7 +1074,7 @@ func (s *Server) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
 
 	updatePath, err := s.updater.DownloadUpdate(ctx, req.DownloadURL)
 	if err != nil {
-		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to download update")
+		zerolog.Ctx(ctx).Err(err).Msg("failed to download update")
 		render.Status(r, defaultInternalServerErrorStatus)
 		render.JSON(w, r, map[string]string{"error": err.Error()})
 
@@ -1113,7 +1114,7 @@ func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 
 	err := s.updater.InstallUpdate(ctx, req.UpdatePath)
 	if err != nil {
-		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to install update")
+		zerolog.Ctx(ctx).Err(err).Msg("failed to install update")
 		render.Status(r, defaultInternalServerErrorStatus)
 		render.JSON(w, r, map[string]string{"error": err.Error()})
 
@@ -1131,15 +1132,43 @@ func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 
 // handleUpdateStatus returns current update status.
 func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	uptime := time.Since(s.startTime)
+
 	status := map[string]interface{}{
 		"current_version": s.version,
 		"build_time":      s.buildTime,
-		"uptime":          time.Since(s.startTime).String(),
+		"uptime":          formatDuration(uptime),
 		"platform":        runtime.GOOS + "/" + runtime.GOARCH,
 	}
 
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, status)
+}
+
+const (
+	secondsPerMinute = 60
+	secondsPerHour   = 3600
+)
+
+// formatDuration formats duration to a human-readable string.
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.0fs", d.Seconds())
+	}
+
+	if d < time.Hour {
+		return fmt.Sprintf("%.0fm%.0fs", d.Minutes(), d.Seconds()-d.Truncate(time.Minute).Seconds())
+	}
+
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) - hours*secondsPerMinute
+	seconds := int(d.Seconds()) - hours*secondsPerHour - minutes*secondsPerMinute
+
+	if hours > 0 {
+		return fmt.Sprintf("%dh%dm%ds", hours, minutes, seconds)
+	}
+
+	return fmt.Sprintf("%dm%ds", minutes, seconds)
 }
 
 // checkAndNotifyUpdates checks for updates and notifies WebSocket clients.
@@ -1161,7 +1190,7 @@ func (s *Server) checkAndNotifyUpdates(conn *websocket.Conn, ctx context.Context
 		// Check for updates (don't include prereleases by default)
 		updateInfo, err := s.updater.CheckForUpdates(ctx, cfg.Update.IncludePrerelease)
 		if err != nil {
-			log.Error().Err(err).Msg("failed to check for updates on WebSocket connect")
+			log.Err(err).Msg("failed to check for updates on WebSocket connect")
 
 			return
 		}
