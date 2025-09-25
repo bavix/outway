@@ -81,7 +81,7 @@ var (
 		Buckets: []float64{0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0},
 	}, []string{"service"})
 
-	// Labeled per upstream.
+	// DNSRequestDurationByUpstream is labeled per upstream.
 	DNSRequestDurationByUpstream = promauto.NewHistogramVec(prom.HistogramOpts{
 		Name:    "dns_request_duration_seconds_by_upstream",
 		Help:    "DNS request duration in seconds by upstream (Histogram).",
@@ -92,7 +92,7 @@ var (
 		Help: "Total resolve errors by upstream (Counter).",
 	}, []string{"service", "upstream"})
 
-	// Cache metrics.
+	// CacheHitsTotal contains cache metrics.
 	CacheHitsTotal = promauto.NewCounterVec(
 		prom.CounterOpts{
 			Name: "dns_cache_hits_total",

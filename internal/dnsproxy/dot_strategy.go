@@ -15,7 +15,7 @@ const (
 	protocolDot   = "dot"
 )
 
-// DoT (DNS-over-TLS) strategy.
+// DotStrategy implements DoT (DNS-over-TLS) strategy.
 type DotStrategy struct{}
 
 func (DotStrategy) Supports(t string) bool { return t == protocolDot }

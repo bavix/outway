@@ -39,6 +39,8 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newRunCmd())
 	rootCmd.AddCommand(newCleanupCmd())
 	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(newCheckCmd())
+	rootCmd.AddCommand(newTTLCmd())
 
 	// Add version command using built-in cobra version
 	rootCmd.Version = verpkg.GetVersion()

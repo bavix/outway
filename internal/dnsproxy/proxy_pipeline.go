@@ -1,9 +1,13 @@
+// nosemgrep: go.lang.security.audit.crypto.math_random.math-random-used
 package dnsproxy
 
 import (
 	"context"
+	"math/rand" // nosemgrep: go.lang.security.audit.crypto.math_random.math-random-used
 
 	"github.com/miekg/dns"
+
+	"github.com/bavix/outway/internal/config"
 )
 
 func (p *Proxy) rebuildResolver(ctx context.Context) {
@@ -27,18 +31,7 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 		// Fallback to legacy string list
 		rs = p.buildLegacyResolvers(strategies, deps)
 	} else {
-		for _, u := range ups { // already sorted desc by weight
-			netw, addr := u.Type, u.Address
-			for _, s := range strategies {
-				if s.Supports(netw) {
-					if r := s.NewResolver(netw, addr, deps); r != nil {
-						rs = append(rs, r)
-					}
-
-					break
-				}
-			}
-		}
+		rs = p.buildWeightedResolvers(ups, strategies, deps)
 	}
 
 	chain := NewChainResolver(rs...)
@@ -67,6 +60,72 @@ func (p *Proxy) buildLegacyResolvers(strategies []UpstreamStrategy, deps Strateg
 
 	for _, raw := range p.upstreams {
 		netw, addr := parseUpstream(raw)
+		for _, s := range strategies {
+			if s.Supports(netw) {
+				if r := s.NewResolver(netw, addr, deps); r != nil {
+					rs = append(rs, r)
+				}
+
+				break
+			}
+		}
+	}
+
+	return rs
+}
+
+// buildWeightedResolvers creates resolvers grouped by weight with random selection within each group.
+func (p *Proxy) buildWeightedResolvers(ups []config.UpstreamConfig, strategies []UpstreamStrategy, deps StrategyDeps) []Resolver {
+	// Group upstreams by weight
+	weightGroups := make(map[int][]config.UpstreamConfig)
+	for _, u := range ups {
+		weightGroups[u.Weight] = append(weightGroups[u.Weight], u)
+	}
+
+	// Process weight groups in descending order
+	weights := p.sortWeightsDesc(weightGroups)
+
+	var rs []Resolver
+
+	for _, weight := range weights {
+		group := weightGroups[weight]
+		rs = append(rs, p.buildResolversFromGroup(group, strategies, deps)...)
+	}
+
+	return rs
+}
+
+// sortWeightsDesc returns weights in descending order.
+func (p *Proxy) sortWeightsDesc(weightGroups map[int][]config.UpstreamConfig) []int {
+	weights := make([]int, 0, len(weightGroups))
+	for weight := range weightGroups {
+		weights = append(weights, weight)
+	}
+
+	// Sort weights in descending order
+	for i := 0; i < len(weights); i++ {
+		for j := i + 1; j < len(weights); j++ {
+			if weights[j] > weights[i] {
+				weights[i], weights[j] = weights[j], weights[i]
+			}
+		}
+	}
+
+	return weights
+}
+
+// buildResolversFromGroup creates resolvers from a weight group with random ordering.
+func (p *Proxy) buildResolversFromGroup(group []config.UpstreamConfig, strategies []UpstreamStrategy, deps StrategyDeps) []Resolver {
+	// Shuffle upstreams within the same weight group for random selection
+	// nosemgrep: go.lang.security.audit.crypto.math_random.math-random-used
+	rand.Shuffle(len(group), func(i, j int) {
+		group[i], group[j] = group[j], group[i]
+	})
+
+	var rs []Resolver
+
+	for _, u := range group {
+		netw, addr := u.Type, u.Address
 		for _, s := range strategies {
 			if s.Supports(netw) {
 				if r := s.NewResolver(netw, addr, deps); r != nil {

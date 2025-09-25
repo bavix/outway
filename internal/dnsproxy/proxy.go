@@ -235,12 +235,12 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 	go func() {
 		if err := udpSrv.ListenAndServe(); err != nil {
-			zerolog.Ctx(ctx).Error().Err(err).Msg("UDP DNS server error")
+			zerolog.Ctx(ctx).Err(err).Msg("UDP DNS server error")
 		}
 	}()
 	go func() {
 		if err := tcpSrv.ListenAndServe(); err != nil {
-			zerolog.Ctx(ctx).Error().Err(err).Msg("TCP DNS server error")
+			zerolog.Ctx(ctx).Err(err).Msg("TCP DNS server error")
 		}
 	}()
 
@@ -249,11 +249,11 @@ func (p *Proxy) Start(ctx context.Context) error {
 		zerolog.Ctx(ctx).Info().Msg("shutting down DNS servers")
 
 		if err := udpSrv.Shutdown(); err != nil {
-			zerolog.Ctx(ctx).Error().Err(err).Msg("failed to shutdown UDP server")
+			zerolog.Ctx(ctx).Err(err).Msg("failed to shutdown UDP server")
 		}
 
 		if err := tcpSrv.Shutdown(); err != nil {
-			zerolog.Ctx(ctx).Error().Err(err).Msg("failed to shutdown TCP server")
+			zerolog.Ctx(ctx).Err(err).Msg("failed to shutdown TCP server")
 		}
 
 		metrics.SetReady(false)
@@ -469,7 +469,7 @@ func minTTL(ttl uint32) uint32 {
 	return ttl
 }
 
-// Admin helpers.
+// Rules returns the rule store for admin helpers.
 func (p *Proxy) Rules() *RuleStore                 { return p.rules }
 func (p *Proxy) GetRuleGroups() []config.RuleGroup { return p.cfg.GetRuleGroups() }
 func (p *Proxy) GetConfig() *config.Config         { return p.cfg }
@@ -517,7 +517,7 @@ func (p *Proxy) PersistRules() error {
 	return p.cfg.Save()
 }
 
-// Upstreams helpers.
+// GetUpstreams returns upstreams helpers.
 func (p *Proxy) GetUpstreams() []string {
 	p.persistMu.Lock()
 	defer p.persistMu.Unlock()
@@ -599,7 +599,7 @@ func configDetectType(addr string) string {
 	return protocolUDP
 }
 
-// Hosts helpers.
+// GetHosts returns hosts helpers.
 func (p *Proxy) GetHosts() []config.HostOverride {
 	p.persistMu.Lock()
 	defer p.persistMu.Unlock()
