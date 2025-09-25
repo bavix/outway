@@ -60,7 +60,7 @@ builds:
     env:
       - CGO_ENABLED=0
 archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
     files:
       - LICENSE
       - README.md
@@ -89,7 +89,7 @@ brews:
     homepage: https://github.com/bavix/outway
     description: "DNS proxy that marks destination IPs and routes by interface"
     license: "MIT"
-    url_template: "https://github.com/bavix/outway/releases/download/v{{ .Version }}/outway_{{ .Version }}_{{ .Os }}_{{ .Arch }}.tar.gz"
+    url_template: "https://github.com/bavix/outway/releases/download/v{{ .Version }}/outway_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}.tar.gz"
     commit_author:
       name: github-actions
       email: github-actions@users.noreply.github.com
