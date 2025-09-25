@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.5 - 2025-09-25
+
+### What's Changed
+
+* Enhance command structure and logging improvements by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/19
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.0.4...v1.0.5
+
 ## v1.0.4 - 2025-09-25
 
 ### What's Changed
