@@ -1,3 +1,4 @@
+//nolint:gochecknoglobals // prometheus metrics and global state
 package metrics
 
 import (
@@ -12,50 +13,126 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
+const (
+	msToSecondsDivisor = 1000.0
+)
+
 var (
-	DNSQueriesTotal    = promauto.NewCounterVec(prom.CounterOpts{Name: "dns_client_queries_total", Help: "Total DNS queries processed by the proxy (Counter)."}, []string{"service"})
-	DNSMarksTotal      = promauto.NewCounterVec(prom.CounterOpts{Name: "dns_mark_operations_total", Help: "IP mark operations by outcome (Counter). outcome=success|error|dropped."}, []string{"service", "outcome"})
-	AdminRequestsTotal = promauto.NewCounterVec(prom.CounterOpts{Name: "http_server_requests_total", Help: "Admin HTTP requests handled (Counter). Labels: service, method, route, status."}, []string{"service", "method", "route", "status"})
+	DNSQueriesTotal = promauto.NewCounterVec(
+		prom.CounterOpts{
+			Name: "dns_client_queries_total",
+			Help: "Total DNS queries processed by the proxy (Counter).",
+		},
+		[]string{"service"},
+	)
+	DNSMarksTotal = promauto.NewCounterVec(
+		prom.CounterOpts{
+			Name: "dns_mark_operations_total",
+			Help: "IP mark operations by outcome (Counter). outcome=success|error|dropped.",
+		},
+		[]string{"service", "outcome"},
+	)
+	AdminRequestsTotal = promauto.NewCounterVec(
+		prom.CounterOpts{
+			Name: "http_server_requests_total",
+			Help: "Admin HTTP requests handled (Counter). Labels: service, method, route, status.",
+		},
+		[]string{"service", "method", "route", "status"},
+	)
 
-	MarksDroppedTotal = promauto.NewCounterVec(prom.CounterOpts{Name: "dns_marks_dropped_total", Help: "Total dropped mark operations (e.g., quota exceeded)"}, []string{"service"})
+	MarksDroppedTotal = promauto.NewCounterVec(
+		prom.CounterOpts{
+			Name: "dns_marks_dropped_total",
+			Help: "Total dropped mark operations (e.g., quota exceeded)",
+		},
+		[]string{"service"},
+	)
 
-	CurrentTrackedIPsPerIface = promauto.NewGaugeVec(prom.GaugeOpts{Name: "egress_tracked_ips_per_interface", Help: "Currently tracked IPs per interface (Gauge)."}, []string{"service", "iface"})
-	CurrentTrackedIPsTotal    = promauto.NewGaugeVec(prom.GaugeOpts{Name: "egress_tracked_ips", Help: "Current total number of tracked IPs (Gauge)."}, []string{"service"})
-	ReadyGauge                = promauto.NewGaugeVec(prom.GaugeOpts{Name: "service_ready", Help: "Service readiness: 1=ready, 0=not ready (Gauge)."}, []string{"service"})
+	CurrentTrackedIPsPerIface = promauto.NewGaugeVec(
+		prom.GaugeOpts{
+			Name: "egress_tracked_ips_per_interface",
+			Help: "Currently tracked IPs per interface (Gauge).",
+		},
+		[]string{"service", "iface"},
+	)
+	CurrentTrackedIPsTotal = promauto.NewGaugeVec(
+		prom.GaugeOpts{
+			Name: "egress_tracked_ips",
+			Help: "Current total number of tracked IPs (Gauge).",
+		},
+		[]string{"service"},
+	)
+	ReadyGauge = promauto.NewGaugeVec(
+		prom.GaugeOpts{
+			Name: "service_ready",
+			Help: "Service readiness: 1=ready, 0=not ready (Gauge).",
+		},
+		[]string{"service"},
+	)
 
 	DNSUpstreamRTT = promauto.NewHistogramVec(prom.HistogramOpts{
-		Name:    "dns_upstream_rtt_ms",
-		Help:    "Upstream DNS RTT in milliseconds (Histogram).",
-		Buckets: []float64{1, 5, 10, 20, 50, 100, 200, 500, 1000},
+		Name:    "dns_upstream_rtt_seconds",
+		Help:    "Upstream DNS RTT in seconds (Histogram).",
+		Buckets: []float64{0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0},
 	}, []string{"service"})
 	DNSRequestDuration = promauto.NewHistogramVec(prom.HistogramOpts{
-		Name:    "dns_request_duration_ms",
-		Help:    "End-to-end DNS request duration in milliseconds (Histogram).",
-		Buckets: []float64{5, 10, 20, 50, 100, 200, 500, 1000, 2000},
+		Name:    "dns_request_duration_seconds",
+		Help:    "End-to-end DNS request duration in seconds (Histogram).",
+		Buckets: []float64{0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0},
 	}, []string{"service"})
 
-	// Labeled per upstream
+	// Labeled per upstream.
 	DNSRequestDurationByUpstream = promauto.NewHistogramVec(prom.HistogramOpts{
-		Name:    "dns_request_duration_ms_by_upstream",
-		Help:    "DNS request duration in ms by upstream (Histogram).",
-		Buckets: []float64{5, 10, 20, 50, 100, 200, 500, 1000, 2000},
+		Name:    "dns_request_duration_seconds_by_upstream",
+		Help:    "DNS request duration in seconds by upstream (Histogram).",
+		Buckets: []float64{0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0},
 	}, []string{"service", "upstream"})
 	ResolveErrorsTotal = promauto.NewCounterVec(prom.CounterOpts{
 		Name: "dns_resolve_errors_total",
 		Help: "Total resolve errors by upstream (Counter).",
 	}, []string{"service", "upstream"})
 
-	// Cache metrics
-	CacheHitsTotal      = promauto.NewCounterVec(prom.CounterOpts{Name: "dns_cache_hits_total", Help: "Total cache hits."}, []string{"service"})
-	CacheMissesTotal    = promauto.NewCounterVec(prom.CounterOpts{Name: "dns_cache_misses_total", Help: "Total cache misses."}, []string{"service"})
-	CacheEvictionsTotal = promauto.NewCounterVec(prom.CounterOpts{Name: "dns_cache_evictions_total", Help: "Total cache evictions."}, []string{"service"})
-	CacheEntries        = promauto.NewGaugeVec(prom.GaugeOpts{Name: "dns_cache_entries", Help: "Current number of cache entries."}, []string{"service"})
-	CacheBytes          = promauto.NewGaugeVec(prom.GaugeOpts{Name: "dns_cache_bytes", Help: "Approximate cache size in bytes."}, []string{"service"})
+	// Cache metrics.
+	CacheHitsTotal = promauto.NewCounterVec(
+		prom.CounterOpts{
+			Name: "dns_cache_hits_total",
+			Help: "Total cache hits.",
+		},
+		[]string{"service"},
+	)
+	CacheMissesTotal = promauto.NewCounterVec(
+		prom.CounterOpts{
+			Name: "dns_cache_misses_total",
+			Help: "Total cache misses.",
+		},
+		[]string{"service"},
+	)
+	CacheEvictionsTotal = promauto.NewCounterVec(
+		prom.CounterOpts{
+			Name: "dns_cache_evictions_total",
+			Help: "Total cache evictions.",
+		},
+		[]string{"service"},
+	)
+	CacheEntries = promauto.NewGaugeVec(
+		prom.GaugeOpts{
+			Name: "dns_cache_entries",
+			Help: "Current number of cache entries.",
+		},
+		[]string{"service"},
+	)
+	CacheBytes = promauto.NewGaugeVec(
+		prom.GaugeOpts{
+			Name: "dns_cache_bytes",
+			Help: "Approximate cache size in bytes.",
+		},
+		[]string{"service"},
+	)
 )
 
-var readyFlag int32
+var readyFlag int32 //nolint:gochecknoglobals // service ready flag
 
-var serviceName atomic.Value // string
+var serviceName atomic.Value //nolint:gochecknoglobals // service name // string
 
 // SetService sets the service label value (default: outway).
 func SetService(name string) { serviceName.Store(name) }
@@ -87,7 +164,7 @@ func registerDefault(c prom.Collector) {
 	}
 }
 
-var M struct {
+var M struct { //nolint:gochecknoglobals // metrics cache
 	DNSQueries              prom.Counter
 	DNSMarksSuccess         prom.Counter
 	DNSMarksError           prom.Counter
@@ -128,6 +205,7 @@ func ObserveRequestDurationUpstream(upstream string, ms float64) {
 	if upstream == "" {
 		upstream = "unknown"
 	}
+
 	DNSRequestDurationByUpstream.WithLabelValues(Service(), upstream).Observe(ms)
 }
 
@@ -136,10 +214,11 @@ func IncResolveError(upstream string) {
 	if upstream == "" {
 		upstream = "unknown"
 	}
+
 	ResolveErrorsTotal.WithLabelValues(Service(), upstream).Inc()
 }
 
-// Simple in-memory RPS ring (per process)
+// Simple in-memory RPS ring (per process).
 const rpsWindow = 60
 
 var (
@@ -154,9 +233,11 @@ func StartRPSTicker() {
 	if !atomic.CompareAndSwapInt32(&rpsTickSet, 0, 1) {
 		return
 	}
+
 	go func() {
 		t := time.NewTicker(time.Second)
 		defer t.Stop()
+
 		for range t.C {
 			i := int(atomic.AddInt64(&rpsIndex, 1) % rpsWindow)
 			atomic.StoreUint64(&rpsHits[i], 0)
@@ -177,12 +258,14 @@ func RecordCacheMiss() {
 	atomic.AddUint64(&rpsMisses[i], 1)
 }
 
-func snapshotRPS() (hits, misses uint64) {
-	for i := 0; i < rpsWindow; i++ {
+func snapshotRPS() (uint64, uint64) {
+	var hits, misses uint64
+	for i := range rpsWindow {
 		hits += atomic.LoadUint64(&rpsHits[i])
 		misses += atomic.LoadUint64(&rpsMisses[i])
 	}
-	return
+
+	return hits, misses
 }
 
 // RecordHTTP increments admin HTTP requests with OTEL-style labels.
@@ -220,7 +303,7 @@ type Stats struct {
 }
 
 // GatherStats collects basic stats from the default registry for a given service label.
-func GatherStats(service string) (Stats, error) {
+func GatherStats(service string) (Stats, error) { //nolint:gocognit,cyclop,funlen
 	mfs, err := prom.DefaultGatherer.Gather()
 	if err != nil {
 		return Stats{}, err
@@ -262,19 +345,19 @@ func GatherStats(service string) (Stats, error) {
 					s.MarksDroppedTotal += m.GetCounter().GetValue()
 				}
 			}
-		case "dns_upstream_rtt_ms":
+		case "dns_upstream_rtt_seconds":
 			for _, m := range mf.GetMetric() {
 				if withService(m) {
 					h := m.GetHistogram()
-					rttSum += h.GetSampleSum() / 1000.0
+					rttSum += h.GetSampleSum() / msToSecondsDivisor
 					rttCount += float64(h.GetSampleCount())
 				}
 			}
-		case "dns_request_duration_ms":
+		case "dns_request_duration_seconds":
 			for _, m := range mf.GetMetric() {
 				if withService(m) {
 					h := m.GetHistogram()
-					reqSum += h.GetSampleSum() / 1000.0
+					reqSum += h.GetSampleSum() / msToSecondsDivisor
 					reqCount += float64(h.GetSampleCount())
 				}
 			}
@@ -300,6 +383,7 @@ func GatherStats(service string) (Stats, error) {
 	eff := float64(hits+misses) / float64(rpsWindow)
 	orig := float64(misses) / float64(rpsWindow)
 	s.EffectiveRPS = eff
+
 	s.OriginRPS = orig
 	if hits+misses > 0 {
 		s.CacheHitRate = float64(hits) / float64(hits+misses)

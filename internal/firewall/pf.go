@@ -15,7 +15,7 @@ type pfBackend struct {
 	timers map[string]*time.Timer // ip -> timer
 }
 
-func newPFBackend() Backend {
+func newPFBackend() Backend { //nolint:ireturn
 	if _, err := exec.LookPath("pfctl"); err != nil {
 		return nil
 	}
@@ -36,14 +36,14 @@ func (p *pfBackend) EnsurePolicy(ctx context.Context, iface string) error {
 }
 
 func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int) error {
-	if ttlSeconds < 30 {
-		ttlSeconds = 30
+	if ttlSeconds < minTTLSeconds {
+		ttlSeconds = minTTLSeconds
 	}
 
 	table := pfTableName(iface)
 	zerolog.Ctx(ctx).Debug().Str("iface", iface).Str("ip", ip).Int("ttl", ttlSeconds).Msg("mark ip")
 
-	cmd := exec.Command("pfctl", "-t", table, "-T", "add", ip)
+	cmd := exec.CommandContext(ctx, "pfctl", "-t", table, "-T", "add", ip) //nolint:gosec // pfctl is a system utility
 	if out, err := cmd.CombinedOutput(); err != nil {
 		zerolog.Ctx(ctx).Warn().Err(err).Str("out", string(out)).Msg("pfctl add failed")
 	}
@@ -55,7 +55,7 @@ func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int
 
 	args = append(args, "-host", ip, "-interface", iface)
 
-	addRoute := exec.Command("route", args...)
+	addRoute := exec.CommandContext(ctx, "route", args...)
 	if out, err := addRoute.CombinedOutput(); err != nil {
 		zerolog.Ctx(ctx).Warn().Err(err).Str("out", string(out)).Str("args", strings.Join(args, " ")).Msg("route add failed")
 	}
@@ -72,7 +72,7 @@ func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int
 
 	t := time.AfterFunc(d, func() {
 		// best-effort deletion on expiry
-		_ = exec.Command("pfctl", "-t", table, "-T", "delete", ip).Run()
+		_ = exec.CommandContext(ctx, "pfctl", "-t", table, "-T", "delete", ip).Run() //nolint:gosec // pfctl is a system utility
 
 		delArgs := []string{"-n", "delete"}
 		if strings.Contains(ip, ":") {
@@ -80,7 +80,7 @@ func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int
 		}
 
 		delArgs = append(delArgs, "-host", ip, "-interface", iface)
-		_ = exec.Command("route", delArgs...).Run()
+		_ = exec.CommandContext(ctx, "route", delArgs...).Run()
 
 		p.mu.Lock()
 		delete(p.timers, ip)

@@ -16,7 +16,7 @@ type nftBackend struct {
 	entries  map[string]time.Time // ip -> expireAt
 }
 
-func newNFTBackend() Backend {
+func newNFTBackend() Backend { //nolint:ireturn
 	if _, err := exec.LookPath("nft"); err != nil {
 		return nil
 	}
@@ -32,9 +32,9 @@ func (n *nftBackend) Name() string { return "nftables" }
 func (n *nftBackend) EnsurePolicy(ctx context.Context, iface string) error {
 	zerolog.Ctx(ctx).Info().Str("iface", iface).Msg("ensure nft policy")
 	// Create table and set if not exist
-	_ = exec.Command("nft", "add", "table", "inet", n.appTable).Run()
-	_ = exec.Command("nft", "add", "set", "inet", n.appTable, ifaceSet(iface), "{ type ipv4_addr; flags timeout; } ").Run()
-	_ = exec.Command("nft", "add", "set", "inet", n.appTable, ifaceSet6(iface), "{ type ipv6_addr; flags timeout; } ").Run()
+	_ = exec.CommandContext(ctx, "nft", "add", "table", "inet", n.appTable).Run()                                                        //nolint
+	_ = exec.CommandContext(ctx, "nft", "add", "set", "inet", n.appTable, ifaceSet(iface), "{ type ipv4_addr; flags timeout; } ").Run()  //nolint
+	_ = exec.CommandContext(ctx, "nft", "add", "set", "inet", n.appTable, ifaceSet6(iface), "{ type ipv6_addr; flags timeout; } ").Run() //nolint
 
 	return nil
 }
@@ -43,8 +43,8 @@ func (n *nftBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds in
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
 
-	if ttlSeconds < 30 {
-		ttlSeconds = 30
+	if ttlSeconds < minTTLSeconds {
+		ttlSeconds = minTTLSeconds
 	}
 
 	zerolog.Ctx(ctx).Debug().Str("iface", iface).Str("ip", ip).Int("ttl", ttlSeconds).Msg("mark ip")
@@ -54,7 +54,7 @@ func (n *nftBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds in
 		set = ifaceSet6(ipvFamilyFromIP(ip, iface))
 	}
 
-	cmd := exec.Command("nft", "add", "element", "inet", n.appTable, set, fmt.Sprintf("{ %s timeout %ds }", ip, ttlSeconds))
+	cmd := exec.CommandContext(ctx, "nft", "add", "element", "inet", n.appTable, set, fmt.Sprintf("{ %s timeout %ds }", ip, ttlSeconds)) //nolint
 	if out, err := cmd.CombinedOutput(); err != nil {
 		zerolog.Ctx(ctx).Warn().Err(err).Str("out", string(out)).Msg("nft add element failed")
 	}
@@ -62,20 +62,20 @@ func (n *nftBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds in
 	exp := time.Now().Add(time.Duration(ttlSeconds) * time.Second)
 
 	n.entries[ip] = exp
-	go n.expireAfter(ip, exp)
+	go n.expireAfter(ctx, ip, exp)
 
 	return nil
 }
 
 func (n *nftBackend) CleanupAll(ctx context.Context) error {
 	zerolog.Ctx(ctx).Info().Str("table", n.appTable).Msg("cleanup nft table")
-	cmd := exec.Command("nft", "delete", "table", "inet", n.appTable)
+	cmd := exec.CommandContext(ctx, "nft", "delete", "table", "inet", n.appTable) //nolint // nft is a system utility
 	_ = cmd.Run()
 
 	return nil
 }
 
-func (n *nftBackend) expireAfter(ip string, expireAt time.Time) {
+func (n *nftBackend) expireAfter(ctx context.Context, ip string, expireAt time.Time) {
 	t := time.NewTimer(time.Until(expireAt))
 	<-t.C
 
@@ -87,7 +87,7 @@ func (n *nftBackend) expireAfter(ip string, expireAt time.Time) {
 		set = ifaceSet6("")
 	}
 
-	_ = exec.Command("nft", "delete", "element", "inet", n.appTable, set, fmt.Sprintf("{ %s }", ip)).Run()
+	_ = exec.CommandContext(ctx, "nft", "delete", "element", "inet", n.appTable, set, fmt.Sprintf("{ %s }", ip)).Run() //nolint
 	delete(n.entries, ip)
 }
 

@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	cfgFile   string
-	logLevel  string
-	logFormat string
+	cfgFile   string //nolint:gochecknoglobals // cobra command flag
+	logLevel  string //nolint:gochecknoglobals // cobra command flag
+	logFormat string //nolint:gochecknoglobals // cobra command flag
 )
 
 func NewRootCmd() *cobra.Command {
@@ -41,7 +41,7 @@ func NewRootCmd() *cobra.Command {
 
 	// Add version command using built-in cobra version
 	rootCmd.Version = verpkg.GetVersion()
-	rootCmd.SetVersionTemplate(fmt.Sprintf("outway %s", verpkg.GetVersion()))
+	rootCmd.SetVersionTemplate("outway " + verpkg.GetVersion())
 
 	return rootCmd
 }

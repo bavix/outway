@@ -12,13 +12,13 @@ type Resolver interface {
 	Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error)
 }
 
-// UpstreamStrategy abstracts building resolvers for specific upstream types
+// UpstreamStrategy abstracts building resolvers for specific upstream types.
 type UpstreamStrategy interface {
 	Supports(t string) bool
 	NewResolver(t string, address string, deps StrategyDeps) Resolver
 }
 
-// StrategyDeps provides dependencies to build resolvers
+// StrategyDeps provides dependencies to build resolvers.
 type StrategyDeps struct {
 	UDP         *dns.Client
 	TCP         *dns.Client

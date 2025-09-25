@@ -8,6 +8,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
+var errNoSupportedFirewallBackendDetected = errors.New("no supported firewall backend detected")
+
 type Backend interface {
 	Name() string
 	EnsurePolicy(ctx context.Context, iface string) error
@@ -15,6 +17,7 @@ type Backend interface {
 	CleanupAll(ctx context.Context) error
 }
 
+//nolint:ireturn
 func DetectBackend(ctx context.Context) (Backend, error) {
 	log := zerolog.Ctx(ctx)
 
@@ -39,5 +42,5 @@ func DetectBackend(ctx context.Context) (Backend, error) {
 		}
 	}
 
-	return nil, errors.New("no supported firewall backend detected")
+	return nil, errNoSupportedFirewallBackendDetected
 }

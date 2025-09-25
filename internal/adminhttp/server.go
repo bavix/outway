@@ -31,6 +31,31 @@ import (
 	"github.com/bavix/outway/ui"
 )
 
+var (
+	errNameViaPatternsRequired = errors.New("name, via and patterns are required")
+	errRuleGroupExists         = errors.New("rule group already exists")
+	errUpstreamsRequired       = errors.New("upstreams required")
+	errRuleGroupNotFound       = errors.New("rule group not found")
+	errNameRequired            = errors.New("name required")
+	errUnsupportedType         = errors.New("unsupported type")
+	errResolverNotReady        = errors.New("resolver not ready")
+)
+
+const (
+	defaultReadHeaderTimeout         = 5 * time.Second
+	defaultIdleTimeout               = 10 * time.Second
+	defaultWriteTimeout              = 15 * time.Second
+	defaultShutdownTimeout           = 5 * time.Second
+	defaultHealthCheckInterval       = 5 * time.Second
+	defaultWebSocketReadLimit        = 1024
+	defaultWebSocketTimeout          = 60 * time.Second
+	defaultWebSocketPingInterval     = 30 * time.Second
+	defaultWebSocketPingTimeout      = 5 * time.Second
+	defaultBadGatewayStatus          = 502
+	defaultBadRequestStatus          = 400
+	defaultInternalServerErrorStatus = 500
+)
+
 type Server struct {
 	addr      string
 	mux       *mux.Router
@@ -57,19 +82,22 @@ func NewServer(addr string, proxy *dnsproxy.Proxy) *Server {
 
 	// Derive ports from inputs and loaded config
 	if _, port, err := net.SplitHostPort(addr); err == nil {
-		s.adminPort, _ = net.LookupPort("tcp", port)
+		s.adminPort, _ = net.DefaultResolver.LookupPort(context.Background(), "tcp", port)
 	}
+
 	if cfg := proxy.GetConfig(); cfg != nil {
-		if cfg.Listen.UDP != "" {
+		switch {
+		case cfg.Listen.UDP != "":
 			s.dnsPort = cfg.Listen.UDP
-		} else if cfg.Listen.TCP != "" {
+		case cfg.Listen.TCP != "":
 			s.dnsPort = cfg.Listen.TCP
-		} else {
+		default:
 			s.dnsPort = ":53"
 		}
 	}
 
 	s.routes()
+
 	return s
 }
 
@@ -87,28 +115,99 @@ func NewServerWithConfig(httpConfig *config.HTTPConfig, proxy *dnsproxy.Proxy) *
 	s.routes()
 	// Fill ports from provided config and proxy config
 	if _, port, err := net.SplitHostPort(httpConfig.Listen); err == nil {
-		s.adminPort, _ = net.LookupPort("tcp", port)
+		s.adminPort, _ = net.DefaultResolver.LookupPort(context.Background(), "tcp", port)
 	}
+
 	if cfg := proxy.GetConfig(); cfg != nil {
-		if cfg.Listen.UDP != "" {
+		switch {
+		case cfg.Listen.UDP != "":
 			s.dnsPort = cfg.Listen.UDP
-		} else if cfg.Listen.TCP != "" {
+		case cfg.Listen.TCP != "":
 			s.dnsPort = cfg.Listen.TCP
-		} else {
+		default:
 			s.dnsPort = ":53"
 		}
 	}
+
 	return s
 }
 
-// SetVersion allows cmd layer to propagate version/build time
+// SetVersion allows cmd layer to propagate version/build time.
 func (s *Server) SetVersion(ver, build string) {
 	if ver != "" {
 		s.version = ver
 	}
+
 	if build != "" {
 		s.buildTime = build
 	}
+}
+
+func jsonResponse(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v) //nolint:errchkjson // intentionally ignoring error for any type
+}
+
+func jsonError(w http.ResponseWriter, status int, err error) {
+	type e struct {
+		Error string `json:"error"`
+	}
+	jsonResponse(w, status, e{Error: err.Error()})
+}
+
+func (s *Server) Start(ctx context.Context) error {
+	// Fast-fail if port is occupied
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.addr)
+	if err != nil {
+		return err
+	}
+
+	_ = ln.Close()
+
+	// Build middleware chain
+	handler := s.buildMiddlewareChain(ctx)
+
+	// Create server with middleware and graceful shutdown
+	srv := s.createServer(ctx, handler)
+
+	zerolog.Ctx(ctx).Info().Str("addr", s.addr).Msg("http listen")
+
+	go func() { _ = srv.ListenAndServe() }()
+
+	// periodic WS broadcasts
+	go func() {
+		ticker := time.NewTicker(defaultHealthCheckInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.broadcast(map[string]any{"type": "stats", "data": s.collectStats()})
+				s.broadcast(map[string]any{"type": "history", "data": s.proxy.History()})
+				// Overview snapshot (lightweight)
+				groups := s.proxy.GetRuleGroups()
+				ups := s.proxy.GetConfig().Upstreams
+				hist := s.proxy.History()
+
+				var rulesTotal int
+				for _, g := range groups {
+					rulesTotal += len(g.Patterns)
+				}
+
+				s.broadcast(map[string]any{"type": "overview", "data": map[string]any{
+					"rules_total":     rulesTotal,
+					"upstreams_total": len(ups),
+					"history_total":   len(hist),
+					"uptime":          time.Since(s.startTime).Round(time.Second).String(),
+				}})
+			}
+		}
+	}()
+
+	return nil
 }
 
 func (s *Server) routes() {
@@ -144,133 +243,8 @@ func (s *Server) routes() {
 	if staticFS, err := fs.Sub(ui.Assets, "dist/static"); err == nil {
 		s.mux.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	}
+
 	s.mux.PathPrefix("/").HandlerFunc(serveIndex)
-}
-
-func jsonResponse(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func jsonError(w http.ResponseWriter, status int, err error) {
-	type e struct {
-		Error string `json:"error"`
-	}
-	jsonResponse(w, status, e{Error: err.Error()})
-}
-
-func (s *Server) Start(ctx context.Context) error {
-	// Fast-fail if port is occupied
-	ln, err := net.Listen("tcp", s.addr)
-	if err != nil {
-		return err
-	}
-
-	_ = ln.Close()
-
-	// Build middleware chain using battle‑tested libs
-	logger := zerolog.Ctx(ctx)
-
-	var h http.Handler = s.mux
-
-	// CORS
-	c := cors.New(cors.Options{AllowOriginFunc: func(_ string) bool { return true }, AllowCredentials: true, AllowedHeaders: []string{"*"}})
-	h = c.Handler(h)
-
-	// Security headers
-	sec := secure.New(secure.Options{
-		FrameDeny:             true,
-		ContentTypeNosniff:    true,
-		BrowserXssFilter:      true,
-		ReferrerPolicy:        "strict-origin-when-cross-origin",
-		ContentSecurityPolicy: "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:",
-	})
-	h = sec.Handler(h)
-
-	// Logging + request metadata
-	h = hlog.NewHandler(*logger)(h)
-	h = hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
-		logger.Info().
-			Str("method", r.Method).
-			Str("url", r.URL.String()).
-			Int("status", status).
-			Int("size", size).
-			Dur("duration", duration).
-			Msg("http")
-	})(h)
-	h = chimw.RequestID(h)
-	h = chimw.RealIP(h)
-	// Recoverer last to catch panics
-	h = chimw.Recoverer(h)
-
-	// OTEL wrapper
-	handler := otelhttp.NewHandler(h, "adminhttp")
-
-	// Bypass middleware and otel wrappers for WebSocket upgrades to preserve http.Hijacker
-	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/ws" {
-			s.handleWS(w, r)
-			return
-		}
-		handler.ServeHTTP(w, r)
-	})
-
-	srv := &http.Server{
-		Addr:              s.addr,
-		Handler:           rootHandler,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
-	}
-	srv.BaseContext = func(_ net.Listener) context.Context { return ctx }
-
-	go func() {
-		<-ctx.Done()
-		// graceful shutdown with timeout, then force close
-		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		srv.SetKeepAlivesEnabled(false)
-		_ = srv.Shutdown(c)
-		_ = srv.Close()
-	}()
-
-	zerolog.Ctx(ctx).Info().Str("addr", s.addr).Msg("http listen")
-
-	go func() { _ = srv.ListenAndServe() }()
-
-	// periodic WS broadcasts
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				s.broadcast(map[string]any{"type": "stats", "data": s.collectStats()})
-				s.broadcast(map[string]any{"type": "history", "data": s.proxy.History()})
-				// Overview snapshot (lightweight)
-				groups := s.proxy.GetRuleGroups()
-				ups := s.proxy.GetConfig().Upstreams
-				hist := s.proxy.History()
-				var rulesTotal int
-				for _, g := range groups {
-					rulesTotal += len(g.Patterns)
-				}
-				s.broadcast(map[string]any{"type": "overview", "data": map[string]any{
-					"rules_total":     rulesTotal,
-					"upstreams_total": len(ups),
-					"history_total":   len(hist),
-					"uptime":          time.Since(s.startTime).Round(time.Second).String(),
-				}})
-			}
-		}
-	}()
-
-	return nil
 }
 
 type ruleGroupDTO struct {
@@ -305,14 +279,15 @@ func serveIndex(w http.ResponseWriter, r *http.Request) {
 	data, err := ui.Assets.ReadFile("dist/index.html")
 	if err != nil {
 		http.Error(w, "ui not found", http.StatusInternalServerError)
+
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
-func (s *Server) handleRuleGroups(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRuleGroups(w http.ResponseWriter, r *http.Request) { //nolint:cyclop,funlen
 	switch r.Method {
 	case http.MethodGet:
 		var ruleGroups []ruleGroupDTO
@@ -332,16 +307,20 @@ func (s *Server) handleRuleGroups(w http.ResponseWriter, r *http.Request) {
 		var in ruleGroupDTO
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			jsonError(w, http.StatusBadRequest, err)
+
 			return
 		}
+
 		if in.Name == "" || in.Via == "" || len(in.Patterns) == 0 {
-			jsonError(w, http.StatusBadRequest, errors.New("name, via and patterns are required"))
+			jsonError(w, http.StatusBadRequest, errNameViaPatternsRequired)
+
 			return
 		}
 		// Check duplicates
 		for _, g := range s.proxy.GetConfig().GetRuleGroups() {
 			if g.Name == in.Name {
-				jsonError(w, http.StatusConflict, errors.New("rule group already exists"))
+				jsonError(w, http.StatusConflict, errRuleGroupExists)
+
 				return
 			}
 		}
@@ -358,19 +337,29 @@ func (s *Server) handleRuleGroups(w http.ResponseWriter, r *http.Request) {
 		for _, p := range in.Patterns {
 			s.proxy.Rules().Upsert(config.Rule{Pattern: p, Via: in.Via, PinTTL: in.PinTTL})
 		}
+
 		if err := cfg.Save(); err != nil {
 			jsonError(w, http.StatusInternalServerError, err)
+
 			return
 		}
+
 		jsonResponse(w, http.StatusCreated, in)
 		// Broadcast updated groups
 		var outGroups []ruleGroupDTO
 		for _, group := range cfg.GetRuleGroups() {
-			outGroups = append(outGroups, ruleGroupDTO{Name: group.Name, Description: group.Description, Via: group.Via, Patterns: group.Patterns, PinTTL: group.PinTTL})
+			outGroups = append(outGroups, ruleGroupDTO{
+				Name:        group.Name,
+				Description: group.Description,
+				Via:         group.Via,
+				Patterns:    group.Patterns,
+				PinTTL:      group.PinTTL,
+			})
 		}
+
 		s.broadcast(map[string]any{"type": "rule_groups", "data": outGroups})
 	case http.MethodDelete:
-		// TODO: Implement rule group deletion
+		// Rule group deletion not implemented yet
 		w.WriteHeader(http.StatusNotImplemented)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -380,7 +369,7 @@ func (s *Server) handleRuleGroups(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	st, err := metrics.GatherStats(metrics.Service())
 	if err != nil {
-		jsonError(w, 500, err)
+		jsonError(w, defaultInternalServerErrorStatus, err)
 
 		return
 	}
@@ -410,19 +399,19 @@ func (s *Server) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 			Upstreams []config.UpstreamConfig `json:"upstreams"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			jsonError(w, 400, err)
+			jsonError(w, defaultBadRequestStatus, err)
 
 			return
 		}
 
 		if len(in.Upstreams) == 0 {
-			jsonError(w, 400, errors.New("upstreams required"))
+			jsonError(w, defaultBadRequestStatus, errUpstreamsRequired)
 
 			return
 		}
 
-		if err := s.proxy.SetUpstreamsConfig(in.Upstreams); err != nil {
-			jsonError(w, 500, err)
+		if err := s.proxy.SetUpstreamsConfig(r.Context(), in.Upstreams); err != nil {
+			jsonError(w, defaultInternalServerErrorStatus, err)
 
 			return
 		}
@@ -434,7 +423,7 @@ func (s *Server) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleHosts returns or updates hosts overrides
+// handleHosts returns or updates hosts overrides.
 func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -445,12 +434,16 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			jsonError(w, http.StatusBadRequest, err)
+
 			return
 		}
-		if err := s.proxy.SetHosts(in.Hosts); err != nil {
+
+		if err := s.proxy.SetHosts(r.Context(), in.Hosts); err != nil {
 			jsonError(w, http.StatusInternalServerError, err)
+
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 		s.broadcast(map[string]any{"type": "hosts", "data": s.proxy.GetHosts()})
 	default:
@@ -458,13 +451,14 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }} //nolint:gochecknoglobals // websocket upgrader
 
-func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) { //nolint:cyclop,funlen
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		// Log the error but don't use http.Error as it conflicts with WebSocket upgrade
 		zerolog.Ctx(r.Context()).Error().Err(err).Msg("WebSocket upgrade failed")
+
 		return
 	}
 
@@ -479,10 +473,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	{
 		groups := s.proxy.GetRuleGroups()
 		ups := s.proxy.GetConfig().Upstreams
+
 		var rulesTotal int
 		for _, g := range groups {
 			rulesTotal += len(g.Patterns)
 		}
+
 		s.sendJSON(conn, map[string]any{"type": "overview", "data": map[string]any{
 			"rules_total":     rulesTotal,
 			"upstreams_total": len(ups),
@@ -492,8 +488,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.sendJSON(conn, map[string]any{"type": "hosts", "data": s.proxy.GetHosts()})
 
 	// Convert rule groups to new format
-	var ruleGroups []ruleGroupDTO
-	for _, group := range s.proxy.GetRuleGroups() {
+	groups := s.proxy.GetRuleGroups()
+
+	ruleGroups := make([]ruleGroupDTO, 0, len(groups))
+	for _, group := range groups {
 		ruleGroups = append(ruleGroups, ruleGroupDTO{
 			Name:        group.Name,
 			Description: group.Description,
@@ -502,36 +500,41 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			PinTTL:      group.PinTTL,
 		})
 	}
+
 	s.sendJSON(conn, map[string]any{"type": "rule_groups", "data": ruleGroups})
 	// Ensure addresses in snapshot include scheme for UI consistency
 	{
 		ups := s.proxy.GetConfig().Upstreams
+
 		norm := make([]config.UpstreamConfig, 0, len(ups))
 		for _, u := range ups {
 			a := u.Address
 			if !strings.Contains(a, "://") && u.Type != "doh" {
 				a = u.Type + "://" + a
 			}
+
 			norm = append(norm, config.UpstreamConfig{Name: u.Name, Address: a, Weight: u.Weight, Type: u.Type})
 		}
+
 		s.sendJSON(conn, map[string]any{"type": "upstreams", "data": norm})
 	}
 
 	// Configure connection
-	conn.SetReadLimit(1024)
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetReadLimit(defaultWebSocketReadLimit)
+	_ = conn.SetReadDeadline(time.Now().Add(defaultWebSocketTimeout))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(defaultWebSocketTimeout))
+
 		return nil
 	})
 
 	// Start ping ticker
 	go func(c *websocket.Conn) {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(defaultWebSocketPingInterval)
 		defer ticker.Stop()
 
 		for range ticker.C {
-			if err := c.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second)); err != nil {
+			if err := c.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(defaultWebSocketPingTimeout)); err != nil {
 				break
 			}
 		}
@@ -569,8 +572,8 @@ func (s *Server) broadcast(v any) {
 	}
 }
 
-// handleRuleGroup handles individual rule group operations
-func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) {
+// handleRuleGroup handles individual rule group operations.
+func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) { //nolint:gocognit,cyclop,funlen
 	vars := mux.Vars(r)
 	name := vars["name"]
 
@@ -587,20 +590,25 @@ func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) {
 					Patterns:    group.Patterns,
 					PinTTL:      group.PinTTL,
 				})
+
 				return
 			}
 		}
-		jsonError(w, http.StatusNotFound, errors.New("rule group not found"))
+
+		jsonError(w, http.StatusNotFound, errRuleGroupNotFound)
 
 	case http.MethodPut:
 		// Update rule group
 		var in ruleGroupDTO
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			jsonError(w, http.StatusBadRequest, err)
+
 			return
 		}
+
 		cfg := s.proxy.GetConfig()
 		updated := false
+
 		for i, g := range cfg.RuleGroups {
 			if g.Name == name {
 				// remove old patterns from runtime store
@@ -619,40 +627,59 @@ func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) {
 				for _, p := range in.Patterns {
 					s.proxy.Rules().Upsert(config.Rule{Pattern: p, Via: in.Via, PinTTL: in.PinTTL})
 				}
+
 				updated = true
+
 				break
 			}
 		}
+
 		if !updated {
-			jsonError(w, http.StatusNotFound, errors.New("rule group not found"))
+			jsonError(w, http.StatusNotFound, errRuleGroupNotFound)
+
 			return
 		}
+
 		if err := cfg.Save(); err != nil {
 			jsonError(w, http.StatusInternalServerError, err)
+
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 		// broadcast
 		var outGroups []ruleGroupDTO
 		for _, group := range cfg.GetRuleGroups() {
-			outGroups = append(outGroups, ruleGroupDTO{Name: group.Name, Description: group.Description, Via: group.Via, Patterns: group.Patterns, PinTTL: group.PinTTL})
+			outGroups = append(outGroups, ruleGroupDTO{
+				Name:        group.Name,
+				Description: group.Description,
+				Via:         group.Via,
+				Patterns:    group.Patterns,
+				PinTTL:      group.PinTTL,
+			})
 		}
+
 		s.broadcast(map[string]any{"type": "rule_groups", "data": outGroups})
 
 	case http.MethodDelete:
 		// Delete rule group
 		cfg := s.proxy.GetConfig()
 		idx := -1
+
 		var g config.RuleGroup
+
 		for i, rg := range cfg.RuleGroups {
 			if rg.Name == name {
 				idx = i
 				g = rg
+
 				break
 			}
 		}
+
 		if idx == -1 {
-			jsonError(w, http.StatusNotFound, errors.New("rule group not found"))
+			jsonError(w, http.StatusNotFound, errRuleGroupNotFound)
+
 			return
 		}
 		// remove patterns from runtime store
@@ -663,14 +690,23 @@ func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) {
 		cfg.RuleGroups = append(cfg.RuleGroups[:idx], cfg.RuleGroups[idx+1:]...)
 		if err := cfg.Save(); err != nil {
 			jsonError(w, http.StatusInternalServerError, err)
+
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 		// broadcast
 		var outGroups []ruleGroupDTO
 		for _, group := range cfg.GetRuleGroups() {
-			outGroups = append(outGroups, ruleGroupDTO{Name: group.Name, Description: group.Description, Via: group.Via, Patterns: group.Patterns, PinTTL: group.PinTTL})
+			outGroups = append(outGroups, ruleGroupDTO{
+				Name:        group.Name,
+				Description: group.Description,
+				Via:         group.Via,
+				Patterns:    group.Patterns,
+				PinTTL:      group.PinTTL,
+			})
 		}
+
 		s.broadcast(map[string]any{"type": "rule_groups", "data": outGroups})
 
 	default:
@@ -678,7 +714,7 @@ func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleHealth provides health check endpoint
+// handleHealth provides health check endpoint.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// Minimal health payload; add more fields later if needed
 	health := map[string]any{
@@ -707,7 +743,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, info)
 }
 
-// handleOverview aggregates lightweight data for the dashboard
+// handleOverview aggregates lightweight data for the dashboard.
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	st := s.collectStats()
 	groups := s.proxy.GetRuleGroups()
@@ -715,10 +751,12 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	hist := s.proxy.History()
 	// last minute aggregates
 	var qLastMin, errLastMin int
+
 	cutoff := time.Now().Add(-1 * time.Minute)
 	for _, ev := range hist {
 		if ev.Time.After(cutoff) {
 			qLastMin++
+
 			if ev.Status != "ok" {
 				errLastMin++
 			}
@@ -742,33 +780,24 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleResolveTest runs a single DNS resolve through the active pipeline.
-// GET /api/v1/resolve?name=www.youtube.com&type=A (type may be any supported name or numeric code)
+// GET /api/v1/resolve?name=www.youtube.com&type=A (type may be any supported name or numeric code).
 func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 	if name == "" {
-		jsonError(w, 400, errors.New("name required"))
+		jsonError(w, defaultBadRequestStatus, errNameRequired)
+
 		return
 	}
+
 	qtypeStr := r.URL.Query().Get("type")
-	qtype := uint16(dns.TypeA)
+
+	qtype := dns.TypeA
 	if qtypeStr != "" {
-		// Try to parse as name first (A, AAAA, MX, TXT, ...)
-		if t, ok := dns.StringToType[strings.ToUpper(qtypeStr)]; ok {
-			qtype = t
-		} else {
-			// Try to parse as numeric code
-			var n uint64
-			var err error
-			if strings.HasPrefix(qtypeStr, "0x") || strings.HasPrefix(qtypeStr, "0X") {
-				n, err = strconv.ParseUint(qtypeStr[2:], 16, 16)
-			} else {
-				n, err = strconv.ParseUint(qtypeStr, 10, 16)
-			}
-			if err != nil {
-				jsonError(w, 400, errors.New("unsupported type"))
-				return
-			}
-			qtype = uint16(n)
+		qtype = parseQueryType(qtypeStr)
+		if qtype == 0 {
+			jsonError(w, defaultBadRequestStatus, errUnsupportedType)
+
+			return
 		}
 	}
 
@@ -777,12 +806,15 @@ func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 	// go through proxy pipeline synchronously
 	resolver := s.proxy.ResolverActive()
 	if resolver == nil {
-		jsonError(w, 500, errors.New("resolver not ready"))
+		jsonError(w, defaultInternalServerErrorStatus, errResolverNotReady)
+
 		return
 	}
+
 	out, src, err := resolver.Resolve(r.Context(), m)
 	if err != nil {
-		jsonError(w, 502, err)
+		jsonError(w, defaultBadGatewayStatus, err)
+
 		return
 	}
 
@@ -801,5 +833,106 @@ func rrToStrings(rrs []dns.RR) []string {
 	for _, rr := range rrs {
 		out = append(out, rr.String())
 	}
+
 	return out
+}
+
+func parseQueryType(qtypeStr string) uint16 {
+	// Try to parse as name first (A, AAAA, MX, TXT, ...)
+	if t, ok := dns.StringToType[strings.ToUpper(qtypeStr)]; ok {
+		return t
+	}
+
+	// Try to parse as numeric code
+	var (
+		n   uint64
+		err error
+	)
+
+	if strings.HasPrefix(qtypeStr, "0x") || strings.HasPrefix(qtypeStr, "0X") {
+		n, err = strconv.ParseUint(qtypeStr[2:], 16, 16)
+	} else {
+		n, err = strconv.ParseUint(qtypeStr, 10, 16)
+	}
+
+	if err != nil {
+		return 0
+	}
+
+	return uint16(n)
+}
+
+func (s *Server) buildMiddlewareChain(ctx context.Context) http.Handler {
+	logger := zerolog.Ctx(ctx)
+
+	var h http.Handler = s.mux
+
+	// CORS
+	c := cors.New(cors.Options{AllowOriginFunc: func(_ string) bool { return true }, AllowCredentials: true, AllowedHeaders: []string{"*"}})
+	h = c.Handler(h)
+
+	// Security headers
+	sec := secure.New(secure.Options{
+		FrameDeny:          true,
+		ContentTypeNosniff: true,
+		BrowserXssFilter:   true,
+		ReferrerPolicy:     "strict-origin-when-cross-origin",
+		ContentSecurityPolicy: "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+			"script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:",
+	})
+	h = sec.Handler(h)
+
+	// Logging + request metadata
+	h = hlog.NewHandler(*logger)(h)
+	h = hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
+		logger.Info().
+			Str("method", r.Method).
+			Str("url", r.URL.String()).
+			Int("status", status).
+			Int("size", size).
+			Dur("duration", duration).
+			Msg("http")
+	})(h)
+	h = chimw.RequestID(h)
+	h = chimw.RealIP(h)
+	// Recoverer last to catch panics
+	h = chimw.Recoverer(h)
+
+	// OTEL wrapper
+	return otelhttp.NewHandler(h, "adminhttp")
+}
+
+func (s *Server) createServer(ctx context.Context, handler http.Handler) *http.Server {
+	// Bypass middleware and otel wrappers for WebSocket upgrades to preserve http.Hijacker
+	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ws" {
+			s.handleWS(w, r)
+
+			return
+		}
+
+		handler.ServeHTTP(w, r)
+	})
+
+	srv := &http.Server{
+		Addr:              s.addr,
+		Handler:           rootHandler,
+		ReadHeaderTimeout: defaultReadHeaderTimeout,
+		IdleTimeout:       defaultIdleTimeout,
+		WriteTimeout:      defaultWriteTimeout,
+	}
+	srv.BaseContext = func(_ net.Listener) context.Context { return ctx }
+
+	go func() {
+		<-ctx.Done()
+		// graceful shutdown with timeout, then force close
+		shutdownCtx, cancel := context.WithTimeout(ctx, defaultShutdownTimeout)
+		defer cancel()
+
+		srv.SetKeepAlivesEnabled(false)
+		_ = srv.Shutdown(shutdownCtx)
+		_ = srv.Close()
+	}()
+
+	return srv
 }

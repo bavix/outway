@@ -11,12 +11,16 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	minTTLSeconds = 30
+)
+
 type iptablesBackend struct {
 	mu     sync.Mutex
 	ifaces map[string]struct{}
 }
 
-func newIPTablesBackend() Backend {
+func newIPTablesBackend() Backend { //nolint:ireturn
 	if _, err := exec.LookPath("iptables"); err != nil {
 		return nil
 	}
@@ -28,8 +32,8 @@ func (b *iptablesBackend) Name() string { return "iptables" }
 
 func (b *iptablesBackend) EnsurePolicy(ctx context.Context, iface string) error {
 	zerolog.Ctx(ctx).Info().Str("iface", iface).Msg("ensure iptables policy")
-	_ = exec.Command("ipset", "create", setName4(iface), "hash:ip", "timeout", "0").Run()
-	_ = exec.Command("ipset", "create", setName6(iface), "hash:ip", "family", "inet6", "timeout", "0").Run()
+	_ = exec.CommandContext(ctx, "ipset", "create", setName4(iface), "hash:ip", "timeout", "0").Run()                    //nolint:gosec
+	_ = exec.CommandContext(ctx, "ipset", "create", setName6(iface), "hash:ip", "family", "inet6", "timeout", "0").Run() //nolint:gosec
 
 	b.mu.Lock()
 	b.ifaces[iface] = struct{}{}
@@ -39,17 +43,17 @@ func (b *iptablesBackend) EnsurePolicy(ctx context.Context, iface string) error 
 }
 
 func (b *iptablesBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int) error {
-	if ttlSeconds < 30 {
-		ttlSeconds = 30
+	if ttlSeconds < minTTLSeconds {
+		ttlSeconds = minTTLSeconds
 	}
 
 	zerolog.Ctx(ctx).Debug().Str("iface", iface).Str("ip", ip).Int("ttl", ttlSeconds).Msg("mark ip")
 	set := setName4(iface)
 
-	cmd := exec.Command("ipset", "add", set, ip, "timeout", strconv.Itoa(ttlSeconds), "-exist")
+	cmd := exec.CommandContext(ctx, "ipset", "add", set, ip, "timeout", strconv.Itoa(ttlSeconds), "-exist") //nolint:gosec
 	if isIPv6(ip) {
 		set = setName6(iface)
-		cmd = exec.Command("ipset", "add", set, ip, "timeout", strconv.Itoa(ttlSeconds), "-exist")
+		cmd = exec.CommandContext(ctx, "ipset", "add", set, ip, "timeout", strconv.Itoa(ttlSeconds), "-exist") //nolint:gosec
 	}
 
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -71,8 +75,8 @@ func (b *iptablesBackend) CleanupAll(ctx context.Context) error {
 	b.mu.Unlock()
 
 	for _, iface := range ifaces {
-		_ = exec.Command("ipset", "destroy", setName4(iface)).Run()
-		_ = exec.Command("ipset", "destroy", setName6(iface)).Run()
+		_ = exec.CommandContext(ctx, "ipset", "destroy", setName4(iface)).Run() //nolint:gosec // ipset is a system utility
+		_ = exec.CommandContext(ctx, "ipset", "destroy", setName6(iface)).Run() //nolint:gosec // ipset is a system utility
 	}
 
 	return nil

@@ -1,3 +1,4 @@
+//nolint:gochecknoglobals // version info set via ldflags
 package version
 
 // These variables are intended to be set via -ldflags at build time.

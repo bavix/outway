@@ -11,9 +11,9 @@ import (
 	"github.com/bavix/outway/internal/metrics"
 )
 
-var dryRun bool
+var dryRun bool //nolint:gochecknoglobals // cobra command flag
 
-func newRunCmd() *cobra.Command {
+func newRunCmd() *cobra.Command { //nolint:cyclop,funlen
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run Outway DNS proxy",

@@ -7,54 +7,64 @@ import (
 	"strings"
 )
 
+const (
+	dotPort = 853
+)
+
 // DetectTypeFromAddress infers upstream type from address/scheme/port.
-// Returns one of: doh, doq, dot, tcp, udp
-func DetectTypeFromAddress(address string) string {
+// Returns one of: doh, doq, dot, tcp, udp.
+func DetectTypeFromAddress(address string) string { //nolint:cyclop
 	a := strings.TrimSpace(address)
 	if a == "" {
-		return "udp"
+		return protocolUDP
 	}
 	// Scheme-based
 	if u, err := url.Parse(a); err == nil && u.Scheme != "" {
 		switch strings.ToLower(u.Scheme) {
 		case "https":
-			return "doh"
+			return protocolDOH
 		case "quic":
-			return "doq"
+			return protocolDOQ
 		case "tls":
-			return "dot"
-		case "tcp":
-			return "tcp"
-		case "udp":
-			return "udp"
+			return protocolDOT
+		case protocolTCP:
+			return protocolTCP
+		case protocolUDP:
+			return protocolUDP
 		}
 	}
 	// Prefix proto:host:port legacy
 	if strings.HasPrefix(a, "udp:") {
-		return "udp"
+		return protocolUDP
 	}
+
 	if strings.HasPrefix(a, "tcp:") {
-		return "tcp"
+		return protocolTCP
 	}
+
 	if strings.HasPrefix(a, "doh:") {
-		return "doh"
+		return protocolDOH
 	}
+
 	if strings.HasPrefix(a, "dot:") || strings.HasPrefix(a, "tls:") {
-		return "dot"
+		return protocolDOT
 	}
+
 	if strings.HasPrefix(a, "doq:") || strings.HasPrefix(a, "quic:") {
-		return "doq"
+		return protocolDOQ
 	}
 
 	// Port-based: 853 -> DoT by default
 	host, port, err := net.SplitHostPort(strings.TrimPrefix(a, "tls:"))
 	if err == nil {
-		if p, _ := strconv.Atoi(port); p == 853 {
+		if p, _ := strconv.Atoi(port); p == dotPort {
 			_ = host
-			return "dot"
+
+			return protocolDOT
 		}
-		return "udp" // explicit host:port default to udp
+
+		return protocolUDP // explicit host:port default to udp
 	}
 	// No port -> udp:53 assumed
-	return "udp"
+	return protocolUDP
 }

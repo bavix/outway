@@ -21,6 +21,7 @@ func parseLevel(s string) zerolog.Level {
 	if lvl, err := zerolog.ParseLevel(strings.ToLower(strings.TrimSpace(s))); err == nil {
 		return lvl
 	}
+
 	return zerolog.InfoLevel
 }
 

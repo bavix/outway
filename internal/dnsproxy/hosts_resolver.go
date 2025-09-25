@@ -10,22 +10,31 @@ import (
 	"github.com/bavix/outway/internal/config"
 )
 
+const (
+	defaultHostsTTL = 60
+)
+
 // HostsResolver answers from static hosts list; falls through to Next if no match.
 type HostsResolver struct {
 	Next  Resolver
 	Hosts []config.HostOverride
 }
 
-func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) {
+func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) { //nolint:gocognit,cyclop,funlen
 	if q == nil || len(q.Question) == 0 {
 		return h.Next.Resolve(ctx, q)
 	}
+
 	name := strings.TrimSuffix(strings.ToLower(q.Question[0].Name), ".")
 	qtype := q.Question[0].Qtype
 
-	var aRecords []net.IP
-	var aaaaRecords []net.IP
-	ttl := uint32(60)
+	var (
+		aRecords    []net.IP
+		aaaaRecords []net.IP
+	)
+
+	ttl := uint32(defaultHostsTTL)
+
 	for _, ho := range h.Hosts {
 		if matchDomainPattern(ho.Pattern, name) {
 			for _, s := range ho.A {
@@ -33,14 +42,17 @@ func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, stri
 					aRecords = append(aRecords, ip)
 				}
 			}
+
 			for _, s := range ho.AAAA {
 				if ip := net.ParseIP(s); ip != nil {
 					aaaaRecords = append(aaaaRecords, ip)
 				}
 			}
+
 			if ho.TTL > 0 {
 				ttl = ho.TTL
 			}
+
 			break
 		}
 	}
@@ -62,6 +74,7 @@ func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, stri
 			}
 		}
 	}
+
 	if qtype == dns.TypeAAAA || qtype == dns.TypeANY {
 		for _, ip := range aaaaRecords {
 			if v6 := ip.To16(); v6 != nil && ip.To4() == nil {
