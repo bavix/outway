@@ -53,6 +53,7 @@ const (
 	defaultWebSocketTimeout          = 60 * time.Second
 	defaultWebSocketPingInterval     = 30 * time.Second
 	defaultWebSocketPingTimeout      = 5 * time.Second
+	defaultWebSocketWriteTimeout     = 5 * time.Second
 	defaultBadGatewayStatus          = 502
 	defaultBadRequestStatus          = 400
 	defaultInternalServerErrorStatus = 500
@@ -63,7 +64,8 @@ type Server struct {
 	mux       *mux.Router
 	proxy     *dnsproxy.Proxy
 	updater   *updater.Updater
-	wsMu      sync.Mutex
+	wsMu      sync.RWMutex // protects conns map (read for iteration, write for add/remove)
+	wsWriteMu sync.Mutex   // protects WebSocket writes (WriteJSON is not a "read" operation)
 	conns     map[*websocket.Conn]struct{}
 	startTime time.Time
 	version   string
@@ -621,15 +623,26 @@ func (s *Server) collectStats() metrics.Stats {
 	return st
 }
 
-func (s *Server) sendJSON(c *websocket.Conn, v any) { _ = c.WriteJSON(v) }
+func (s *Server) sendJSON(c *websocket.Conn, v any) {
+	s.wsWriteMu.Lock()
+	defer s.wsWriteMu.Unlock()
+
+	_ = c.SetWriteDeadline(time.Now().Add(defaultWebSocketWriteTimeout))
+	_ = c.WriteJSON(v)
+}
 
 func (s *Server) broadcast(v any) {
-	s.wsMu.Lock()
-	defer s.wsMu.Unlock()
+	s.wsMu.RLock()
+	defer s.wsMu.RUnlock()
 
+	var wg sync.WaitGroup
 	for c := range s.conns {
-		_ = c.WriteJSON(v)
+		wg.Go(func() {
+			s.sendJSON(c, v)
+		})
 	}
+
+	wg.Wait()
 }
 
 // handleRuleGroup handles individual rule group operations.
