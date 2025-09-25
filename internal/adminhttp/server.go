@@ -14,6 +14,7 @@ import (
 	"time"
 
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/miekg/dns"
@@ -27,6 +28,7 @@ import (
 	"github.com/bavix/outway/internal/config"
 	"github.com/bavix/outway/internal/dnsproxy"
 	"github.com/bavix/outway/internal/metrics"
+	"github.com/bavix/outway/internal/updater"
 	"github.com/bavix/outway/internal/version"
 	"github.com/bavix/outway/ui"
 )
@@ -60,6 +62,7 @@ type Server struct {
 	addr      string
 	mux       *mux.Router
 	proxy     *dnsproxy.Proxy
+	updater   *updater.Updater
 	wsMu      sync.Mutex
 	conns     map[*websocket.Conn]struct{}
 	startTime time.Time
@@ -71,9 +74,22 @@ type Server struct {
 
 func NewServer(addr string, proxy *dnsproxy.Proxy) *Server {
 	s := &Server{
-		addr:      addr,
-		mux:       mux.NewRouter(),
-		proxy:     proxy,
+		addr:  addr,
+		mux:   mux.NewRouter(),
+		proxy: proxy,
+		updater: func() *updater.Updater {
+			u, err := updater.New(updater.Config{
+				Owner:          "bavix",
+				Repo:           "outway",
+				CurrentVersion: version.GetVersion(),
+				BinaryName:     "outway",
+			})
+			if err != nil {
+				panic(err) // This should not happen with valid config
+			}
+
+			return u
+		}(),
 		conns:     make(map[*websocket.Conn]struct{}),
 		startTime: time.Now(),
 		version:   version.GetVersion(),
@@ -103,9 +119,22 @@ func NewServer(addr string, proxy *dnsproxy.Proxy) *Server {
 
 func NewServerWithConfig(httpConfig *config.HTTPConfig, proxy *dnsproxy.Proxy) *Server {
 	s := &Server{
-		addr:      httpConfig.Listen,
-		mux:       mux.NewRouter(),
-		proxy:     proxy,
+		addr:  httpConfig.Listen,
+		mux:   mux.NewRouter(),
+		proxy: proxy,
+		updater: func() *updater.Updater {
+			u, err := updater.New(updater.Config{
+				Owner:          "bavix",
+				Repo:           "outway",
+				CurrentVersion: version.GetVersion(),
+				BinaryName:     "outway",
+			})
+			if err != nil {
+				panic(err)
+			}
+
+			return u
+		}(),
 		conns:     make(map[*websocket.Conn]struct{}),
 		startTime: time.Now(),
 		version:   version.GetVersion(),
@@ -143,19 +172,6 @@ func (s *Server) SetVersion(ver, build string) {
 	}
 }
 
-func jsonResponse(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v) //nolint:errchkjson // intentionally ignoring error for any type
-}
-
-func jsonError(w http.ResponseWriter, status int, err error) {
-	type e struct {
-		Error string `json:"error"`
-	}
-	jsonResponse(w, status, e{Error: err.Error()})
-}
-
 func (s *Server) Start(ctx context.Context) error {
 	// Fast-fail if port is occupied
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.addr)
@@ -171,7 +187,11 @@ func (s *Server) Start(ctx context.Context) error {
 	// Create server with middleware and graceful shutdown
 	srv := s.createServer(ctx, handler)
 
-	zerolog.Ctx(ctx).Info().Str("addr", s.addr).Msg("http listen")
+	zerolog.Ctx(ctx).Info().
+		Str("addr", s.addr).
+		Str("version", s.version).
+		Str("build_time", s.buildTime).
+		Msg("http listen")
 
 	go func() { _ = srv.ListenAndServe() }()
 
@@ -232,6 +252,12 @@ func (s *Server) routes() {
 
 	// DNS test resolve
 	api.HandleFunc("/resolve", s.handleResolveTest).Methods("GET")
+
+	// Update management
+	api.HandleFunc("/update/check", s.handleUpdateCheck).Methods("GET")
+	api.HandleFunc("/update/download", s.handleUpdateDownload).Methods("POST")
+	api.HandleFunc("/update/install", s.handleUpdateInstall).Methods("POST")
+	api.HandleFunc("/update/status", s.handleUpdateStatus).Methods("GET")
 
 	// Health check
 	s.mux.HandleFunc("/health", s.handleHealth).Methods("GET")
@@ -301,25 +327,29 @@ func (s *Server) handleRuleGroups(w http.ResponseWriter, r *http.Request) { //no
 			})
 		}
 
-		jsonResponse(w, http.StatusOK, rulesResponse{RuleGroups: ruleGroups})
+		render.Status(r, http.StatusOK)
+		render.JSON(w, r, rulesResponse{RuleGroups: ruleGroups})
 	case http.MethodPost:
 		// Create a new rule group
 		var in ruleGroupDTO
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			jsonError(w, http.StatusBadRequest, err)
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
 		}
 
 		if in.Name == "" || in.Via == "" || len(in.Patterns) == 0 {
-			jsonError(w, http.StatusBadRequest, errNameViaPatternsRequired)
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, map[string]string{"error": errNameViaPatternsRequired.Error()})
 
 			return
 		}
 		// Check duplicates
 		for _, g := range s.proxy.GetConfig().GetRuleGroups() {
 			if g.Name == in.Name {
-				jsonError(w, http.StatusConflict, errRuleGroupExists)
+				render.Status(r, http.StatusConflict)
+				render.JSON(w, r, map[string]string{"error": errRuleGroupExists.Error()})
 
 				return
 			}
@@ -339,12 +369,14 @@ func (s *Server) handleRuleGroups(w http.ResponseWriter, r *http.Request) { //no
 		}
 
 		if err := cfg.Save(); err != nil {
-			jsonError(w, http.StatusInternalServerError, err)
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
 		}
 
-		jsonResponse(w, http.StatusCreated, in)
+		render.Status(r, http.StatusCreated)
+		render.JSON(w, r, in)
 		// Broadcast updated groups
 		var outGroups []ruleGroupDTO
 		for _, group := range cfg.GetRuleGroups() {
@@ -369,12 +401,14 @@ func (s *Server) handleRuleGroups(w http.ResponseWriter, r *http.Request) { //no
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	st, err := metrics.GatherStats(metrics.Service())
 	if err != nil {
-		jsonError(w, defaultInternalServerErrorStatus, err)
+		render.Status(r, defaultInternalServerErrorStatus)
+		render.JSON(w, r, map[string]string{"error": err.Error()})
 
 		return
 	}
 
-	jsonResponse(w, http.StatusOK, st)
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, st)
 }
 
 type historyResponse struct {
@@ -386,32 +420,52 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	events := make([]dnsproxy.QueryEvent, len(h))
 	copy(events, h)
 
-	jsonResponse(w, http.StatusOK, historyResponse{Events: events})
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, historyResponse{Events: events})
 }
 
 func (s *Server) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		// Return structured upstreams from config (type may be empty -> autodetected)
-		jsonResponse(w, http.StatusOK, upstreamsResponse{Upstreams: s.proxy.GetConfig().Upstreams})
+		// Normalize addresses to include scheme for UI consistency (align with WS snapshot)
+		{
+			ups := s.proxy.GetConfig().Upstreams
+
+			norm := make([]config.UpstreamConfig, 0, len(ups))
+			for _, u := range ups {
+				a := u.Address
+				if !strings.Contains(a, "://") && u.Type != "doh" {
+					a = u.Type + "://" + a
+				}
+
+				norm = append(norm, config.UpstreamConfig{Name: u.Name, Address: a, Weight: u.Weight, Type: u.Type})
+			}
+
+			render.Status(r, http.StatusOK)
+			render.JSON(w, r, upstreamsResponse{Upstreams: norm})
+		}
 	case http.MethodPost:
 		var in struct {
 			Upstreams []config.UpstreamConfig `json:"upstreams"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			jsonError(w, defaultBadRequestStatus, err)
+			render.Status(r, defaultBadRequestStatus)
+			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
 		}
 
 		if len(in.Upstreams) == 0 {
-			jsonError(w, defaultBadRequestStatus, errUpstreamsRequired)
+			render.Status(r, defaultBadRequestStatus)
+			render.JSON(w, r, map[string]string{"error": errUpstreamsRequired.Error()})
 
 			return
 		}
 
 		if err := s.proxy.SetUpstreamsConfig(r.Context(), in.Upstreams); err != nil {
-			jsonError(w, defaultInternalServerErrorStatus, err)
+			render.Status(r, defaultInternalServerErrorStatus)
+			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
 		}
@@ -427,19 +481,22 @@ func (s *Server) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		jsonResponse(w, http.StatusOK, map[string]any{"hosts": s.proxy.GetHosts()})
+		render.Status(r, http.StatusOK)
+		render.JSON(w, r, map[string]any{"hosts": s.proxy.GetHosts()})
 	case http.MethodPut:
 		var in struct {
 			Hosts []config.HostOverride `json:"hosts"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			jsonError(w, http.StatusBadRequest, err)
+			render.Status(r, defaultBadRequestStatus)
+			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
 		}
 
 		if err := s.proxy.SetHosts(r.Context(), in.Hosts); err != nil {
-			jsonError(w, http.StatusInternalServerError, err)
+			render.Status(r, defaultInternalServerErrorStatus)
+			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
 		}
@@ -469,6 +526,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) { //nolint:cyc
 	// Send initial snapshot
 	s.sendJSON(conn, map[string]any{"type": "stats", "data": s.collectStats()})
 	s.sendJSON(conn, map[string]any{"type": "history", "data": s.proxy.History()})
+
+	// Check for updates when WebSocket connects
+	s.checkAndNotifyUpdates(conn, r.Context())
 	// initial overview
 	{
 		groups := s.proxy.GetRuleGroups()
@@ -583,7 +643,8 @@ func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) { //nol
 		groups := s.proxy.GetRuleGroups()
 		for _, group := range groups {
 			if group.Name == name {
-				jsonResponse(w, http.StatusOK, ruleGroupDTO{
+				render.Status(r, http.StatusOK)
+				render.JSON(w, r, ruleGroupDTO{
 					Name:        group.Name,
 					Description: group.Description,
 					Via:         group.Via,
@@ -595,13 +656,15 @@ func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) { //nol
 			}
 		}
 
-		jsonError(w, http.StatusNotFound, errRuleGroupNotFound)
+		render.Status(r, http.StatusNotFound)
+		render.JSON(w, r, map[string]string{"error": errRuleGroupNotFound.Error()})
 
 	case http.MethodPut:
 		// Update rule group
 		var in ruleGroupDTO
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			jsonError(w, http.StatusBadRequest, err)
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
 		}
@@ -635,13 +698,15 @@ func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) { //nol
 		}
 
 		if !updated {
-			jsonError(w, http.StatusNotFound, errRuleGroupNotFound)
+			render.Status(r, http.StatusNotFound)
+			render.JSON(w, r, map[string]string{"error": errRuleGroupNotFound.Error()})
 
 			return
 		}
 
 		if err := cfg.Save(); err != nil {
-			jsonError(w, http.StatusInternalServerError, err)
+			render.Status(r, defaultInternalServerErrorStatus)
+			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
 		}
@@ -678,7 +743,8 @@ func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) { //nol
 		}
 
 		if idx == -1 {
-			jsonError(w, http.StatusNotFound, errRuleGroupNotFound)
+			render.Status(r, http.StatusNotFound)
+			render.JSON(w, r, map[string]string{"error": errRuleGroupNotFound.Error()})
 
 			return
 		}
@@ -689,7 +755,8 @@ func (s *Server) handleRuleGroup(w http.ResponseWriter, r *http.Request) { //nol
 		// remove from config
 		cfg.RuleGroups = append(cfg.RuleGroups[:idx], cfg.RuleGroups[idx+1:]...)
 		if err := cfg.Save(); err != nil {
-			jsonError(w, http.StatusInternalServerError, err)
+			render.Status(r, defaultInternalServerErrorStatus)
+			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
 		}
@@ -723,7 +790,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"version":   s.version,
 		"uptime":    time.Since(s.startTime).String(),
 	}
-	jsonResponse(w, http.StatusOK, health)
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, health)
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -740,7 +809,8 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		BuildTime: s.buildTime,
 	}
 
-	jsonResponse(w, http.StatusOK, info)
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, info)
 }
 
 // handleOverview aggregates lightweight data for the dashboard.
@@ -776,7 +846,9 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 		"queries_last_min": qLastMin,
 		"errors_last_min":  errLastMin,
 	}
-	jsonResponse(w, http.StatusOK, payload)
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, payload)
 }
 
 // handleResolveTest runs a single DNS resolve through the active pipeline.
@@ -784,7 +856,8 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 	if name == "" {
-		jsonError(w, defaultBadRequestStatus, errNameRequired)
+		render.Status(r, defaultBadRequestStatus)
+		render.JSON(w, r, map[string]string{"error": errNameRequired.Error()})
 
 		return
 	}
@@ -795,7 +868,8 @@ func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 	if qtypeStr != "" {
 		qtype = parseQueryType(qtypeStr)
 		if qtype == 0 {
-			jsonError(w, defaultBadRequestStatus, errUnsupportedType)
+			render.Status(r, defaultBadRequestStatus)
+			render.JSON(w, r, map[string]string{"error": errUnsupportedType.Error()})
 
 			return
 		}
@@ -806,14 +880,16 @@ func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 	// go through proxy pipeline synchronously
 	resolver := s.proxy.ResolverActive()
 	if resolver == nil {
-		jsonError(w, defaultInternalServerErrorStatus, errResolverNotReady)
+		render.Status(r, defaultInternalServerErrorStatus)
+		render.JSON(w, r, map[string]string{"error": errResolverNotReady.Error()})
 
 		return
 	}
 
 	out, src, err := resolver.Resolve(r.Context(), m)
 	if err != nil {
-		jsonError(w, defaultBadGatewayStatus, err)
+		render.Status(r, defaultBadGatewayStatus)
+		render.JSON(w, r, map[string]string{"error": err.Error()})
 
 		return
 	}
@@ -825,7 +901,9 @@ func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 		"answers":  len(out.Answer),
 		"records":  rrToStrings(out.Answer),
 	}
-	jsonResponse(w, http.StatusOK, resp)
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, resp)
 }
 
 func rrToStrings(rrs []dns.RR) []string {
@@ -935,4 +1013,168 @@ func (s *Server) createServer(ctx context.Context, handler http.Handler) *http.S
 	}()
 
 	return srv
+}
+
+// Update-related handlers
+
+// handleUpdateCheck checks for available updates.
+func (s *Server) handleUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	includePrerelease := r.URL.Query().Get("prerelease") == "true"
+
+	updateInfo, err := s.updater.CheckForUpdates(ctx, includePrerelease)
+	if err != nil {
+		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to check for updates")
+		render.Status(r, defaultInternalServerErrorStatus)
+		render.JSON(w, r, map[string]string{"error": err.Error()})
+
+		return
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, updateInfo)
+}
+
+// handleUpdateDownload downloads the update.
+func (s *Server) handleUpdateDownload(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req struct {
+		DownloadURL string `json:"download_url"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		render.Status(r, defaultBadRequestStatus)
+		render.JSON(w, r, map[string]string{"error": err.Error()})
+
+		return
+	}
+
+	if req.DownloadURL == "" {
+		render.Status(r, defaultBadRequestStatus)
+		render.JSON(w, r, map[string]string{"error": "download_url is required"})
+
+		return
+	}
+
+	updatePath, err := s.updater.DownloadUpdate(ctx, req.DownloadURL)
+	if err != nil {
+		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to download update")
+		render.Status(r, defaultInternalServerErrorStatus)
+		render.JSON(w, r, map[string]string{"error": err.Error()})
+
+		return
+	}
+
+	response := map[string]string{
+		"status": "downloaded",
+		"path":   updatePath,
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, response)
+}
+
+// handleUpdateInstall installs the downloaded update.
+func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req struct {
+		UpdatePath string `json:"update_path"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		render.Status(r, defaultBadRequestStatus)
+		render.JSON(w, r, map[string]string{"error": err.Error()})
+
+		return
+	}
+
+	if req.UpdatePath == "" {
+		render.Status(r, defaultBadRequestStatus)
+		render.JSON(w, r, map[string]string{"error": "update_path is required"})
+
+		return
+	}
+
+	err := s.updater.InstallUpdate(ctx, req.UpdatePath)
+	if err != nil {
+		zerolog.Ctx(ctx).Error().Err(err).Msg("failed to install update")
+		render.Status(r, defaultInternalServerErrorStatus)
+		render.JSON(w, r, map[string]string{"error": err.Error()})
+
+		return
+	}
+
+	response := map[string]string{
+		"status":  "installed",
+		"message": "Update installed successfully. Please restart the application.",
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, response)
+}
+
+// handleUpdateStatus returns current update status.
+func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	status := map[string]interface{}{
+		"current_version": s.version,
+		"build_time":      s.buildTime,
+		"uptime":          time.Since(s.startTime).String(),
+		"platform":        runtime.GOOS + "/" + runtime.GOARCH,
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, status)
+}
+
+// checkAndNotifyUpdates checks for updates and notifies WebSocket clients.
+func (s *Server) checkAndNotifyUpdates(conn *websocket.Conn, ctx context.Context) {
+	// Run in goroutine to not block WebSocket connection
+	go func() {
+		log := zerolog.Ctx(ctx)
+
+		// Get update config to check if updates are enabled
+		cfg := s.proxy.GetConfig()
+		if !cfg.Update.Enabled {
+			log.Debug().Msg("updates disabled, skipping update check")
+
+			return
+		}
+
+		log.Debug().Msg("checking for updates on WebSocket connect")
+
+		// Check for updates (don't include prereleases by default)
+		updateInfo, err := s.updater.CheckForUpdates(ctx, cfg.Update.IncludePrerelease)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to check for updates on WebSocket connect")
+
+			return
+		}
+
+		if updateInfo.HasUpdate {
+			log.Info().
+				Str("current_version", updateInfo.CurrentVersion).
+				Str("latest_version", updateInfo.LatestVersion).
+				Msg("update available, notifying WebSocket client")
+
+			// Send update notification to this specific WebSocket connection
+			s.sendJSON(conn, map[string]any{
+				"type": "update_available",
+				"data": map[string]any{
+					"current_version": updateInfo.CurrentVersion,
+					"latest_version":  updateInfo.LatestVersion,
+					"release": map[string]any{
+						"name":         updateInfo.Release.Name,
+						"body":         updateInfo.Release.Body,
+						"published_at": updateInfo.Release.PublishedAt,
+						"assets":       updateInfo.Release.Assets,
+					},
+				},
+			})
+		} else {
+			log.Debug().Msg("no updates available")
+		}
+	}()
 }

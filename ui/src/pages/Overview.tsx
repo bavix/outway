@@ -239,7 +239,7 @@ export function Overview({ provider }: OverviewProps) {
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <p className="text-sm text-gray-600 dark:text-gray-400">Cache hit rate</p>
-                <p className="text-lg font-semibold text-gray-900 dark:text-white">{cacheHit == null ? 'N/A' : `${Math.round(cacheHit * 100)}%`}</p>
+                <p className="text-lg font-semibold text-gray-900 dark:text-white">{cacheHit == null ? 'N/A' : `${(cacheHit * 100).toFixed(2)}%`}</p>
               </div>
               <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <p className="text-sm text-gray-600 dark:text-gray-400">Queries (1m)</p>

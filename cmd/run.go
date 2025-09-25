@@ -9,6 +9,7 @@ import (
 	"github.com/bavix/outway/internal/dnsproxy"
 	"github.com/bavix/outway/internal/firewall"
 	"github.com/bavix/outway/internal/metrics"
+	"github.com/bavix/outway/internal/version"
 )
 
 var dryRun bool //nolint:gochecknoglobals // cobra command flag
@@ -20,6 +21,12 @@ func newRunCmd() *cobra.Command { //nolint:cyclop,funlen
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			log := zerolog.Ctx(ctx)
+
+			// Log version information at startup
+			log.Info().
+				Str("version", version.GetVersion()).
+				Str("build_time", version.GetBuildTime()).
+				Msg("outway starting")
 
 			path := cfgFile
 			if path == "" {

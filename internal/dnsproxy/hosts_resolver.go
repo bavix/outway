@@ -25,7 +25,7 @@ func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, stri
 		return h.Next.Resolve(ctx, q)
 	}
 
-	name := strings.TrimSuffix(strings.ToLower(q.Question[0].Name), ".")
+	name := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(q.Question[0].Name, ".")))
 	qtype := q.Question[0].Qtype
 
 	var (

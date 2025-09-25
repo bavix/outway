@@ -303,6 +303,8 @@ type Stats struct {
 }
 
 // GatherStats collects basic stats from the default registry for a given service label.
+//
+//nolint:gocyclo // Complex metric gathering logic with many conditional branches
 func GatherStats(service string) (Stats, error) { //nolint:gocognit,cyclop,funlen
 	mfs, err := prom.DefaultGatherer.Gather()
 	if err != nil {
@@ -383,10 +385,32 @@ func GatherStats(service string) (Stats, error) { //nolint:gocognit,cyclop,funle
 	eff := float64(hits+misses) / float64(rpsWindow)
 	orig := float64(misses) / float64(rpsWindow)
 	s.EffectiveRPS = eff
-
 	s.OriginRPS = orig
-	if hits+misses > 0 {
-		s.CacheHitRate = float64(hits) / float64(hits+misses)
+
+	// Calculate cache hit rate from Prometheus metrics (total history)
+	var totalCacheHits, totalCacheMisses float64
+
+	for _, mf := range mfs {
+		name := mf.GetName()
+		switch name {
+		case "dns_cache_hits_total":
+			for _, m := range mf.GetMetric() {
+				if withService(m) {
+					totalCacheHits += m.GetCounter().GetValue()
+				}
+			}
+		case "dns_cache_misses_total":
+			for _, m := range mf.GetMetric() {
+				if withService(m) {
+					totalCacheMisses += m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+
+	// Use Prometheus metrics for cache hit rate (total history)
+	if totalCacheHits+totalCacheMisses > 0 {
+		s.CacheHitRate = totalCacheHits / (totalCacheHits + totalCacheMisses)
 	}
 
 	return s, nil

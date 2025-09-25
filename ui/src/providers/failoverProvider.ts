@@ -124,6 +124,7 @@ export class FailoverProvider implements Provider {
         case 'history': this.wsUnsubs.set(topic, this.wsProvider.onHistory(multiCb)); break;
         case 'hosts': this.wsUnsubs.set(topic, this.wsProvider.onHosts(multiCb)); break;
         case 'overview': this.wsUnsubs.set(topic, this.wsProvider.onOverview(multiCb)); break;
+        case 'update_available': this.wsUnsubs.set(topic, this.wsProvider.onUpdateAvailable(multiCb)); break;
       }
     } else {
       switch (topic) {
@@ -133,6 +134,7 @@ export class FailoverProvider implements Provider {
         case 'history': this.restUnsubs.set(topic, this.restProvider.onHistory(multiCb)); break;
         case 'hosts': this.restUnsubs.set(topic, this.restProvider.onHosts(multiCb)); break;
         case 'overview': this.restUnsubs.set(topic, this.restProvider.onOverview(multiCb)); break;
+        case 'update_available': this.restUnsubs.set(topic, this.restProvider.onUpdateAvailable(multiCb)); break;
       }
     }
   }
@@ -175,6 +177,7 @@ export class FailoverProvider implements Provider {
 
   onHosts(cb: (hosts: HostOverride[]) => void): () => void { return this.addListener('hosts', cb); }
   onOverview(cb: (ov: OverviewData) => void): () => void { return this.addListener('overview', cb); }
+  onUpdateAvailable(cb: (updateInfo: any) => void): () => void { return this.addListener('update_available', cb); }
 
   // All mutations go through REST (optimistic updates handled by store)
   async fetchRuleGroups(): Promise<RuleGroup[]> {

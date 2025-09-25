@@ -69,7 +69,7 @@ export interface Config {
 }
 
 // WebSocket message types
-export type WSMessageType = 'stats' | 'history' | 'rule_groups' | 'upstreams' | 'hosts' | 'overview';
+export type WSMessageType = 'stats' | 'history' | 'rule_groups' | 'upstreams' | 'hosts' | 'overview' | 'update_available';
 
 export interface WSMessage {
   type: WSMessageType;
@@ -88,6 +88,7 @@ export interface Provider {
   onStats(cb: (s: Stats) => void): () => void;
   onHistory(cb: (evs: QueryEvent[]) => void): () => void;
   onHosts(cb: (hosts: HostOverride[]) => void): () => void;
+  onUpdateAvailable(cb: (updateInfo: any) => void): () => void;
   fetchRuleGroups(): Promise<RuleGroup[]>;
   createRuleGroup(group: RuleGroup): Promise<void>;
   updateRuleGroup(name: string, group: RuleGroup): Promise<void>;

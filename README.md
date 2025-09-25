@@ -14,6 +14,7 @@ Example: you have two uplinks (wan1, wan2). You want `foo.example.com` via `wan1
 ## Features
 
 - Domain‑based egress routing (interface per rule group)
+- Request coalescing: deduplicates concurrent cache misses for the same host/QTYPE
 - Clean URL format for upstream resolvers (single, strict format):
   - `udp://host[:port]` (default 53)
   - `tcp://host[:port]` (default 53)
@@ -23,6 +24,12 @@ Example: you have two uplinks (wan1, wan2). You want `foo.example.com` via `wan1
 - Built‑in Admin UI with WebSocket realtime updates and polling fallback
 - Prometheus metrics at `/metrics`
 - Health endpoint at `/health`
+
+## Caching
+
+- LRU cache keyed by `fqdn:qtype` with per‑record TTL respected
+- Expired entries are evicted on read; fresh responses are cached
+- Singleflight coalescing prevents upstream stampedes for identical in‑flight queries
 
 ## Quick start
 
@@ -197,6 +204,27 @@ outway run --config ./config.yaml
 - Admin UI: `http://127.0.0.1:47823/`
 - Metrics: `http://127.0.0.1:47823/metrics`
 - Health: `http://127.0.0.1:47823/health`
+
+## Commands
+
+- `outway run` - Start the DNS proxy service
+- `outway cleanup` - Cleanup all firewall rules created by Outway
+- `outway self-update` - Update to the latest version from GitHub
+- `outway --version` - Show version information
+
+### Self-update
+
+Update Outway to the latest version:
+
+```bash
+# Update to latest stable version
+outway self-update
+
+# Include prerelease versions
+outway self-update --prerelease
+```
+
+The self-update command will download the appropriate binary for your platform, replace the current binary, and exit with code 42 to trigger automatic restart by your init system (systemd, OpenWrt /etc/init.d, etc.).
 
 ## Admin UI & configuration
 
