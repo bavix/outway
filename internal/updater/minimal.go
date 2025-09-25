@@ -268,29 +268,43 @@ func (u *Updater) InstallUpdate(ctx context.Context, updatePath string) error {
 		return fmt.Errorf("%w: %w", ErrUpdateVerification, err)
 	}
 
-	// Create backup of current executable
+	// Paths (ensure atomic replace in the same directory/fs)
+	execDir := filepath.Dir(execPath)
+	newPath := filepath.Join(execDir, u.config.BinaryName+".new")
 	backupPath := execPath + ".backup"
-	if err := u.copyFile(execPath, backupPath); err != nil {
-		return fmt.Errorf("%w: failed to create backup: %w", ErrInstallationFailed, err)
+
+	// Move downloaded file into the target dir first (atomic rename requires same dir/fs)
+	if err := u.copyFile(updatePath, newPath); err != nil {
+		return fmt.Errorf("%w: failed to stage new binary: %w", ErrInstallationFailed, err)
 	}
 
-	// Replace current binary with new one
-	if err := u.copyFile(updatePath, execPath); err != nil {
-		// Restore backup on failure
-		_ = u.copyFile(backupPath, execPath)
-		_ = os.Remove(backupPath)
-
-		return fmt.Errorf("%w: failed to replace binary: %w", ErrInstallationFailed, err)
-	}
-
-	// Set executable permissions on new binary
-	if err := os.Chmod(execPath, fileModeExec); err != nil {
-		// Restore backup on failure
-		_ = u.copyFile(backupPath, execPath)
-		_ = os.Remove(backupPath)
+	if err := os.Chmod(newPath, fileModeExec); err != nil {
+		_ = os.Remove(newPath)
 
 		return fmt.Errorf("%w: failed to set executable permissions: %w", ErrInstallationFailed, err)
 	}
+
+	// Sync staged file to disk
+	_ = syncFile(newPath)
+
+	// Create/overwrite backup (best-effort)
+	_ = os.Remove(backupPath)
+	if err := os.Rename(execPath, backupPath); err != nil {
+		// If rename fails (e.g., Windows lock), fall back to copy
+		_ = u.copyFile(execPath, backupPath)
+	}
+
+	// Atomically move new binary into place
+	if err := os.Rename(newPath, execPath); err != nil {
+		// rollback
+		_ = os.Rename(backupPath, execPath)
+		_ = os.Remove(newPath)
+
+		return fmt.Errorf("%w: failed to atomically replace binary: %w", ErrInstallationFailed, err)
+	}
+
+	// Sync directory to persist rename on crash/power loss (best-effort)
+	_ = syncDir(execDir)
 
 	// Clean up
 	_ = os.Remove(backupPath)
@@ -302,6 +316,34 @@ func (u *Updater) InstallUpdate(ctx context.Context, updatePath string) error {
 	os.Exit(exitCodeRestart)
 
 	return nil // This line will never be reached
+}
+
+// syncFile fsyncs a file; best-effort on platforms that support it.
+func syncFile(path string) error {
+	f, err := os.Open(path) //nolint:gosec
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = f.Close() }()
+
+	if err := f.Sync(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// syncDir fsyncs a directory to ensure rename durability.
+func syncDir(dir string) error {
+	d, err := os.Open(dir) //nolint:gosec
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = d.Close() }()
+
+	return d.Sync()
 }
 
 // IsNewerVersion compares two version strings.
