@@ -8,6 +8,7 @@ import (
 
 	lru "github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/miekg/dns"
+	"golang.org/x/sync/singleflight"
 )
 
 type cacheItem struct {
@@ -20,6 +21,7 @@ type CachedResolver struct {
 	MaxEntries int
 
 	lru *lru.LRU[string, cacheItem]
+	sf  singleflight.Group
 }
 
 func NewCachedResolver(next Resolver, maxEntries int) *CachedResolver {
@@ -41,7 +43,31 @@ func (c *CachedResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, str
 
 	it, ok := c.lru.Get(key)
 	if !ok {
-		return c.resolveAndCache(ctx, q, key)
+		// Coalesce concurrent cache misses for the same key
+		v, err, _ := c.sf.Do(key, func() (any, error) {
+			out, src, err := c.resolveAndCache(ctx, q, key)
+			if err != nil || out == nil {
+				return nil, err
+			}
+
+			return struct {
+				msg *dns.Msg
+				src string
+			}{msg: out, src: src}, nil
+		})
+		if err != nil || v == nil {
+			return nil, "", err
+		}
+
+		res, ok2 := v.(struct {
+			msg *dns.Msg
+			src string
+		})
+		if !ok2 {
+			return nil, "", nil
+		}
+
+		return res.msg, res.src, nil
 	}
 
 	if time.Now().After(it.expire) {

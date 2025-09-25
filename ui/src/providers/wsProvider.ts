@@ -181,6 +181,11 @@ export class WSProvider implements Provider {
     return this.subscribe('overview' as WSMessageType, cb);
   }
 
+  // Updates
+  onUpdateAvailable(cb: (updateInfo: any) => void): () => void {
+    return this.subscribe('update_available' as WSMessageType, cb);
+  }
+
   private subscribe(type: WSMessageType, cb: Function): () => void {
     if (!this.callbacks.has(type)) {
       this.callbacks.set(type, new Set());

@@ -183,6 +183,12 @@ type HTTPConfig struct {
 	MaxHeaderBytes int           `yaml:"max_header_bytes,omitempty"`
 }
 
+// UpdateConfig defines automatic update settings.
+type UpdateConfig struct {
+	Enabled           bool `json:"enabled"            yaml:"enabled"`
+	IncludePrerelease bool `json:"include_prerelease" yaml:"include_prerelease,omitempty"`
+}
+
 // Config is the main application configuration.
 type Config struct {
 	AppName    string           `yaml:"app_name,omitempty"`
@@ -194,6 +200,7 @@ type Config struct {
 	Cache      CacheConfig      `yaml:"cache,omitempty"`
 	HTTP       HTTPConfig       `yaml:"http,omitempty"`
 	Hosts      []HostOverride   `yaml:"hosts,omitempty"`
+	Update     UpdateConfig     `yaml:"update,omitempty"`
 	Path       string           `yaml:"-"`
 }
 

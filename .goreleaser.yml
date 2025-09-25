@@ -15,14 +15,14 @@ builds:
       - amd64
       - arm64
       - arm
-      - 386
+      - "386"
       - mips
       - mipsle
       - mips64
       - mips64le
     goarm:
-      - 6
-      - 7
+      - "6"
+      - "7"
     gomips:
       - hardfloat
       - softfloat
@@ -31,7 +31,7 @@ builds:
       - goos: darwin
         goarch: arm
       - goos: darwin
-        goarch: 386
+        goarch: "386"
       - goos: darwin
         goarch: mips
       - goos: darwin

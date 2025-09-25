@@ -20,6 +20,7 @@ import (
 	"github.com/bavix/outway/internal/config"
 	"github.com/bavix/outway/internal/firewall"
 	"github.com/bavix/outway/internal/metrics"
+	"github.com/bavix/outway/internal/version"
 )
 
 var (
@@ -53,15 +54,23 @@ const (
 
 // matchDomainPattern matches a hostname against a wildcard pattern like *.example.com
 // Exact match if no wildcard.
+// Enhanced for OpenWrt compatibility - handles various DNS query formats.
 func matchDomainPattern(pattern, host string) bool {
-	pattern = strings.TrimSuffix(strings.ToLower(pattern), ".")
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	// Normalize both pattern and host for consistent comparison
+	pattern = strings.ToLower(strings.TrimSpace(pattern))
+	host = strings.ToLower(strings.TrimSpace(host))
+
+	// Remove trailing dots (DNS FQDN format)
+	pattern = strings.TrimSuffix(pattern, ".")
+	host = strings.TrimSuffix(host, ".")
 
 	if pattern == "" || pattern == "*" {
 		return true
 	}
 
 	if suffix, ok := strings.CutPrefix(pattern, "*."); ok {
+		// Match both the exact domain (example.com) and subdomains (www.example.com)
+		// This handles OpenWrt DNS queries properly
 		return host == suffix || strings.HasSuffix(host, "."+suffix)
 	}
 
@@ -195,7 +204,12 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 	metrics.StartRPSTicker()
 
-	zerolog.Ctx(ctx).Info().Str("udp", p.cfg.Listen.UDP).Str("tcp", p.cfg.Listen.TCP).Msg("starting DNS servers")
+	zerolog.Ctx(ctx).Info().
+		Str("udp", p.cfg.Listen.UDP).
+		Str("tcp", p.cfg.Listen.TCP).
+		Str("version", version.GetVersion()).
+		Str("build_time", version.GetBuildTime()).
+		Msg("starting DNS servers")
 	metrics.SetReady(true)
 	// initial pipeline
 	p.rebuildResolver(ctx)
@@ -319,7 +333,7 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 			}
 
 			p.addHistory(QueryEvent{
-				Name:       strings.TrimSuffix(q.Name, "."),
+				Name:       strings.TrimSpace(strings.TrimSuffix(q.Name, ".")),
 				QType:      q.Qtype,
 				Upstream:   usedUpstream,
 				DurationMs: dms,

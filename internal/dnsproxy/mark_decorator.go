@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/miekg/dns"
+	"github.com/rs/zerolog"
 
 	"github.com/bavix/outway/internal/config"
 	"github.com/bavix/outway/internal/firewall"
@@ -24,7 +25,7 @@ func (m *MarkResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, strin
 		return out, src, err
 	}
 
-	name := strings.ToLower(strings.TrimSuffix(q.Question[0].Name, "."))
+	name := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(q.Question[0].Name, ".")))
 
 	rule, ok := m.Rules.Find(name)
 	if !ok {
@@ -42,6 +43,11 @@ func (m *MarkResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, strin
 			}
 
 			if err2 := m.Backend.MarkIP(ctx, rule.Via, a.A.String(), int(ttl)); err2 != nil {
+				zerolog.Ctx(ctx).Error().Err(err2).
+					Str("ip", a.A.String()).
+					Str("via", rule.Via).
+					Int("ttl", int(ttl)).
+					Msg("failed to mark IPv4 IP")
 				metrics.M.DNSMarksError.Inc()
 			} else {
 				metrics.M.DNSMarksSuccess.Inc()
@@ -55,6 +61,11 @@ func (m *MarkResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, strin
 			}
 
 			if err2 := m.Backend.MarkIP(ctx, rule.Via, a.AAAA.String(), int(ttl)); err2 != nil {
+				zerolog.Ctx(ctx).Error().Err(err2).
+					Str("ip", a.AAAA.String()).
+					Str("via", rule.Via).
+					Int("ttl", int(ttl)).
+					Msg("failed to mark IPv6 IP")
 				metrics.M.DNSMarksError.Inc()
 			} else {
 				metrics.M.DNSMarksSuccess.Inc()

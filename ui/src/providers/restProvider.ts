@@ -115,6 +115,12 @@ export class RESTProvider implements Provider {
     return this.subscribe('hosts', cb);
   }
 
+  onUpdateAvailable(_cb: (updateInfo: any) => void): () => void {
+    // REST provider doesn't support real-time update notifications
+    // This is a no-op for REST fallback
+    return () => {};
+  }
+
   private subscribe(type: string, cb: Function): () => void {
     if (!this.callbacks.has(type)) {
       this.callbacks.set(type, new Set());

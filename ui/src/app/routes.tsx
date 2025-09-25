@@ -6,6 +6,7 @@ import { Rules } from '../pages/Rules.js';
 import { Upstreams } from '../pages/Upstreams.js';
 import { History } from '../pages/History.js';
 import { Hosts } from '../pages/Hosts.js';
+import Update from '../pages/Update.js';
 import { Sidebar } from '../components/Sidebar.js';
 import { Header } from '../components/Header.js';
 import { useTheme } from '../hooks/useTheme.js';
@@ -34,7 +35,7 @@ export function App() {
     // Handle hash changes for routing
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
-      const validTabs = ['overview', 'rules', 'upstreams', 'history', 'hosts', 'resolve'];
+      const validTabs = ['overview', 'rules', 'upstreams', 'history', 'hosts', 'resolve', 'update'];
       if (validTabs.includes(hash)) {
         setActiveTab(hash);
       }
@@ -139,6 +140,7 @@ export function App() {
             {activeTab === 'history' && <History provider={provider} />}
             {activeTab === 'hosts' && <Hosts provider={provider} />}
             {activeTab === 'resolve' && <Resolve provider={provider} />}
+            {activeTab === 'update' && <Update provider={provider} />}
           </div>
         </main>
       </div>
