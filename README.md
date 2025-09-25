@@ -201,20 +201,20 @@ outway run --config ./config.yaml
 ## Admin UI & configuration
 
 - UI: `http://127.0.0.1:47823/` (by default)
-- WebSocket realtime is used automatically; if WS недоступен, UI переключается на polling
+- WebSocket realtime is used automatically; if WS is unavailable, UI switches to polling
 
-Чтобы запустить админку на другом адресе/порту, задайте секцию `http` в конфиге:
+To run the admin UI on a different address/port, configure the `http` section in the config:
 
 ```yaml
 http:
   enabled: true
-  listen: 0.0.0.0:8080   # адрес:порт для Admin UI и API
+  listen: 0.0.0.0:8080   # address:port for Admin UI and API
   read_timeout: 30s
   write_timeout: 30s
   idle_timeout: 2m0s
 ```
 
-Upstreams в YAML задаются только в URL‑виде — тип выводится из схемы (`udp://`, `tcp://`, `dot://`, `doq://`, `https://`).
+Upstreams in YAML are specified only in URL format — the type is derived from the scheme (`udp://`, `tcp://`, `dot://`, `doq://`, `https://`).
 
 ## Observability
 
