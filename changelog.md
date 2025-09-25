@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.0.2 - 2025-09-25
+
+### What's Changed
+
+* Update README.md for clarity and consistency in English translations by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/14
+* Enhance update management and caching features by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/16
+* Bump storybook from 8.6.14 to 9.1.8 in /ui by [@dependabot](https://github.com/dependabot)[bot] in https://github.com/bavix/outway/pull/15
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.0.1...v1.0.2
+
 ## v1.0.1 - 2025-09-25
 
 ### What's Changed
