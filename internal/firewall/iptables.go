@@ -21,8 +21,7 @@ type iptablesBackend struct {
 	ifaces map[string]struct{}
 }
 
-//nolint:ireturn
-func newIPTablesBackend() Backend {
+func newIPTablesBackend() *iptablesBackend {
 	if _, err := exec.LookPath("iptables"); err != nil {
 		return nil
 	}

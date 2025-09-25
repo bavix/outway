@@ -17,8 +17,7 @@ type pfBackend struct {
 	timers map[string]*time.Timer // ip -> timer
 }
 
-//nolint:ireturn
-func newPFBackend() Backend {
+func newPFBackend() *pfBackend {
 	if _, err := exec.LookPath("pfctl"); err != nil {
 		return nil
 	}
