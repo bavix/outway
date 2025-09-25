@@ -1,0 +1,10 @@
+/* System font stack (CSP-safe) */
+
+/* Tailwind CSS Base */
+@tailwind base;
+
+/* Tailwind CSS Components */
+@tailwind components;
+
+/* Tailwind CSS Utilities */
+@tailwind utilities;
