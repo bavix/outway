@@ -21,7 +21,7 @@ go.work
 # UI build output (handled by ui/.gitignore)
 
 # GoReleaser build output
-dist/
+./dist/
 
 # IDE files
 .vscode/
