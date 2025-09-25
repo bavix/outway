@@ -218,15 +218,25 @@ func FormatFileSize(bytes int64) string {
 		return "0 Bytes"
 	}
 
-	const k = 1024
+	const (
+		kbInt = int64(1024)
+		k     = 1024.0
+	)
 
-	sizes := []string{"Bytes", "KB", "MB", "GB"}
+	units := []string{"Bytes", "KB", "MB", "GB"}
 
-	i := 0
-	for bytes >= k && i < len(sizes)-1 {
-		bytes /= k
-		i++
+	// Bytes case: no decimals
+	if bytes < kbInt {
+		return fmt.Sprintf("%d %s", bytes, units[0])
 	}
 
-	return fmt.Sprintf("%.2f %s", float64(bytes), sizes[i])
+	size := float64(bytes)
+
+	unitIndex := 0
+	for size >= k && unitIndex < len(units)-1 {
+		size /= k
+		unitIndex++
+	}
+
+	return fmt.Sprintf("%.2f %s", size, units[unitIndex])
 }

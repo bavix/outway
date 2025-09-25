@@ -40,6 +40,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
 // Logger defines a simple logging interface.
@@ -199,7 +201,7 @@ func (u *Updater) CheckForUpdates(ctx context.Context, includePrerelease bool) (
 		}, nil
 	}
 
-	hasUpdate := u.IsNewerVersion(u.config.CurrentVersion, latestRelease.TagName)
+	hasUpdate := u.IsNewerVersion(latestRelease.TagName, u.config.CurrentVersion)
 
 	updateInfo := &UpdateInfo{
 		CurrentVersion: u.config.CurrentVersion,
@@ -304,12 +306,23 @@ func (u *Updater) InstallUpdate(ctx context.Context, updatePath string) error {
 
 // IsNewerVersion compares two version strings.
 func (u *Updater) IsNewerVersion(current, latest string) bool {
-	// Remove 'v' prefix if present
-	current = trimVPrefix(current)
-	latest = trimVPrefix(latest)
+	// semver.Compare expects leading 'v' and proper semver strings
+	ensureV := func(v string) string {
+		if v == "" {
+			return v
+		}
 
-	// Simple string comparison for semantic versions
-	return latest > current
+		if v[0] != 'v' {
+			return "v" + v
+		}
+
+		return v
+	}
+
+	c := ensureV(current)
+	l := ensureV(latest)
+
+	return semver.Compare(c, l) > 0
 }
 
 // downloadToTemp downloads the file to a temporary location.
@@ -384,14 +397,7 @@ func (u *Updater) extractAndProcess(filePath string) (string, error) {
 	return path, nil
 }
 
-// trimVPrefix removes the 'v' prefix from version strings if present.
-func trimVPrefix(version string) string {
-	if len(version) > 0 && version[0] == 'v' {
-		return version[1:]
-	}
-
-	return version
-}
+// trimVPrefix removed in favor of golang.org/x/mod/semver usage
 
 // verifyUpdate verifies that the update file is valid and executable.
 func (u *Updater) verifyUpdate(ctx context.Context, updatePath string) error {

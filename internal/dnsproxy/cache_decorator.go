@@ -8,8 +8,7 @@ import (
 
 	lru "github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/miekg/dns"
-
-	"github.com/bavix/outway/internal/dnsproxy/sf"
+	"golang.org/x/sync/singleflight"
 )
 
 type cacheItem struct {
@@ -22,7 +21,7 @@ type CachedResolver struct {
 	MaxEntries int
 
 	lru *lru.LRU[string, cacheItem]
-	sf  sf.Group
+	sf  singleflight.Group
 }
 
 func NewCachedResolver(next Resolver, maxEntries int) *CachedResolver {
