@@ -116,6 +116,7 @@ func (p *Proxy) sortWeightsDesc(weightGroups map[int][]config.UpstreamConfig) []
 // buildResolversFromGroup creates resolvers from a weight group with random ordering.
 func (p *Proxy) buildResolversFromGroup(group []config.UpstreamConfig, strategies []UpstreamStrategy, deps StrategyDeps) []Resolver {
 	// Shuffle upstreams within the same weight group for random selection
+	// nosemgrep: go.lang.security.audit.crypto.math_random.math-random-used
 	rand.Shuffle(len(group), func(i, j int) {
 		group[i], group[j] = group[j], group[i]
 	})

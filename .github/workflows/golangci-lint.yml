@@ -19,7 +19,6 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go-version }}
-          cache: true
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
