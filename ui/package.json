@@ -16,7 +16,7 @@
     "@storybook/preact-webpack5": "^8.6.14",
     "chart.js": "^4.4.3",
     "preact": "^10.19.3",
-    "zustand": "^4.4.7"
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.8.2",
