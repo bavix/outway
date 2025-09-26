@@ -23,7 +23,7 @@ func DetectBackend(ctx context.Context) (Backend, error) {
 
 	switch runtime.GOOS {
 	case "linux":
-		if b := newNFTBackend(ctx); b != nil {
+		if b := newRouteBackend(ctx); b != nil {
 			log.Info().Str("backend", b.Name()).Msg("firewall backend selected")
 
 			return b, nil
