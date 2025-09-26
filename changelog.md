@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.7 - 2025-09-26
+
+### What's Changed
+
+* Refactor firewall backend to use newRouteBackend by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/21
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.0.6...v1.0.7
+
 ## v1.0.6 - 2025-09-25
 
 ### What's Changed
