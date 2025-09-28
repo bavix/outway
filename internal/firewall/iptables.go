@@ -21,7 +21,7 @@ type iptablesBackend struct {
 	ifaces map[string]struct{}
 }
 
-func newIPTablesBackend() *iptablesBackend {
+func NewIPTablesBackend() *iptablesBackend {
 	if _, err := exec.LookPath("iptables"); err != nil {
 		return nil
 	}
@@ -33,8 +33,8 @@ func (b *iptablesBackend) Name() string { return "iptables" }
 
 func (b *iptablesBackend) EnsurePolicy(ctx context.Context, iface string) error {
 	zerolog.Ctx(ctx).Info().Str("iface", iface).Msg("ensure iptables policy")
-	_ = exec.CommandContext(ctx, "ipset", "create", setName4(iface), "hash:ip", "timeout", "0").Run()                    //nolint:gosec
-	_ = exec.CommandContext(ctx, "ipset", "create", setName6(iface), "hash:ip", "family", "inet6", "timeout", "0").Run() //nolint:gosec
+	_ = exec.CommandContext(ctx, "ipset", "create", SetName4(iface), "hash:ip", "timeout", "0").Run()                    //nolint:gosec
+	_ = exec.CommandContext(ctx, "ipset", "create", SetName6(iface), "hash:ip", "family", "inet6", "timeout", "0").Run() //nolint:gosec
 
 	b.mu.Lock()
 	b.ifaces[iface] = struct{}{}
@@ -49,11 +49,11 @@ func (b *iptablesBackend) MarkIP(ctx context.Context, iface, ip string, ttlSecon
 	}
 
 	zerolog.Ctx(ctx).Debug().Str("iface", iface).IPAddr("ip", net.ParseIP(ip)).Int("ttl", ttlSeconds).Msg("mark ip")
-	set := setName4(iface)
+	set := SetName4(iface)
 
 	cmd := exec.CommandContext(ctx, "ipset", "add", set, ip, "timeout", strconv.Itoa(ttlSeconds), "-exist") //nolint:gosec
-	if isIPv6(ip) {
-		set = setName6(iface)
+	if IsIPv6(ip) {
+		set = SetName6(iface)
 		cmd = exec.CommandContext(ctx, "ipset", "add", set, ip, "timeout", strconv.Itoa(ttlSeconds), "-exist") //nolint:gosec
 	}
 
@@ -78,14 +78,33 @@ func (b *iptablesBackend) CleanupAll(ctx context.Context) error {
 	b.mu.Unlock()
 
 	for _, iface := range ifaces {
-		_ = exec.CommandContext(ctx, "ipset", "destroy", setName4(iface)).Run() //nolint:gosec // ipset is a system utility
-		_ = exec.CommandContext(ctx, "ipset", "destroy", setName6(iface)).Run() //nolint:gosec // ipset is a system utility
+		_ = exec.CommandContext(ctx, "ipset", "destroy", SetName4(iface)).Run() //nolint:gosec // ipset is a system utility
+		_ = exec.CommandContext(ctx, "ipset", "destroy", SetName6(iface)).Run() //nolint:gosec // ipset is a system utility
 	}
 
 	return nil
 }
 
-func setName4(iface string) string { return fmt.Sprintf("outway_%s_4", iface) }
-func setName6(iface string) string { return fmt.Sprintf("outway_%s_6", iface) }
+// InitializeTunnels is a no-op for iptables backend.
+func (b *iptablesBackend) InitializeTunnels(ctx context.Context, tunnels []string) ([]TunnelInfo, error) {
+	// iptables backend doesn't use dynamic tables
+	return []TunnelInfo{}, nil
+}
+
+// FlushRuntime flushes runtime data for iptables backend.
+func (b *iptablesBackend) FlushRuntime(ctx context.Context) error {
+	zerolog.Ctx(ctx).Info().Msg("flushing iptables runtime data")
+	// For iptables, we just flush the sets
+	return b.CleanupAll(ctx)
+}
+
+// GetTunnelInfo returns nil for iptables backend.
+func (b *iptablesBackend) GetTunnelInfo(ctx context.Context, iface string) (*TunnelInfo, error) {
+	// iptables backend doesn't use dynamic tables
+	return nil, fmt.Errorf("%w: iptables backend", ErrTunnelNotFound)
+}
+
+func SetName4(iface string) string { return fmt.Sprintf("outway_%s_4", iface) }
+func SetName6(iface string) string { return fmt.Sprintf("outway_%s_6", iface) }
 
 var _ = time.Second

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
@@ -48,14 +50,20 @@ func newRunCmd() *cobra.Command { //nolint:cyclop,funlen
 				return err
 			}
 
-			if dryRun {
-				ifaces := map[string]struct{}{}
-				for _, r := range cfg.GetAllRules() {
-					ifaces[r.Via] = struct{}{}
-				}
+			// Extract tunnel interfaces from config
+			tunnels := map[string]struct{}{}
+			for _, r := range cfg.GetAllRules() {
+				tunnels[r.Via] = struct{}{}
+			}
 
-				for iface := range ifaces {
-					log.Info().Str("iface", iface).Str("backend", backend.Name()).Msg("dry-run ensure policy")
+			tunnelList := make([]string, 0, len(tunnels))
+			for tunnel := range tunnels {
+				tunnelList = append(tunnelList, tunnel)
+			}
+
+			if dryRun {
+				for _, tunnel := range tunnelList {
+					log.Info().Str("tunnel", tunnel).Str("backend", backend.Name()).Msg("dry-run ensure policy")
 				}
 
 				log.Info().Msg("dry-run complete")
@@ -65,16 +73,24 @@ func newRunCmd() *cobra.Command { //nolint:cyclop,funlen
 
 			defer func() { _ = backend.CleanupAll(ctx) }()
 
-			_ = backend.CleanupAll(ctx)
+			// Initialize tunnels with dynamic table management
+			if len(tunnelList) > 0 {
+				tunnelInfos, err := backend.InitializeTunnels(ctx, tunnelList)
+				if err != nil {
+					return fmt.Errorf("failed to initialize tunnels: %w", err)
+				}
 
-			ifaces := map[string]struct{}{}
-			for _, r := range cfg.GetAllRules() {
-				ifaces[r.Via] = struct{}{}
-			}
+				log.Info().
+					Int("tunnels", len(tunnelInfos)).
+					Msg("tunnels initialized with dynamic tables")
 
-			for iface := range ifaces {
-				if err := backend.EnsurePolicy(ctx, iface); err != nil {
-					return err
+				for _, info := range tunnelInfos {
+					log.Info().
+						Str("tunnel", info.Name).
+						Int("table", info.TableID).
+						Int("fwmark", info.FwMark).
+						Int("priority", info.Priority).
+						Msg("tunnel configured")
 				}
 			}
 

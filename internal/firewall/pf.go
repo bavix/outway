@@ -17,7 +17,7 @@ type pfBackend struct {
 	timers map[string]*time.Timer // ip -> timer
 }
 
-func newPFBackend() *pfBackend {
+func NewPFBackend() *pfBackend {
 	if _, err := exec.LookPath("pfctl"); err != nil {
 		return nil
 	}
@@ -42,7 +42,7 @@ func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int
 		ttlSeconds = minTTLSeconds
 	}
 
-	table := pfTableName(iface)
+	table := PFTableName(iface)
 	zerolog.Ctx(ctx).Debug().Str("iface", iface).IPAddr("ip", net.ParseIP(ip)).Int("ttl", ttlSeconds).Msg("mark ip")
 
 	cmd := exec.CommandContext(ctx, "pfctl", "-t", table, "-T", "add", ip) //nolint:gosec // pfctl is a system utility
@@ -113,4 +113,33 @@ func (p *pfBackend) CleanupAll(ctx context.Context) error {
 	return nil
 }
 
-func pfTableName(iface string) string { return "outway_" + iface }
+// InitializeTunnels is a no-op for pf backend.
+func (p *pfBackend) InitializeTunnels(ctx context.Context, tunnels []string) ([]TunnelInfo, error) {
+	// pf backend doesn't use dynamic tables
+	return []TunnelInfo{}, nil
+}
+
+// FlushRuntime flushes runtime data for pf backend.
+func (p *pfBackend) FlushRuntime(ctx context.Context) error {
+	zerolog.Ctx(ctx).Info().Msg("flushing pf runtime data")
+	// For pf, we just flush the timers
+	p.mu.Lock()
+
+	for ip, t := range p.timers {
+		if t.Stop() {
+			delete(p.timers, ip)
+		}
+	}
+
+	p.mu.Unlock()
+
+	return nil
+}
+
+// GetTunnelInfo returns nil for pf backend.
+func (p *pfBackend) GetTunnelInfo(ctx context.Context, iface string) (*TunnelInfo, error) {
+	// pf backend doesn't use dynamic tables
+	return nil, fmt.Errorf("%w: pf backend", ErrTunnelNotFound)
+}
+
+func PFTableName(iface string) string { return "outway_" + iface }
