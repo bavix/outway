@@ -10,7 +10,6 @@ import {
   useServerInfo, useServerInfoActions
 } from '../store/store.js';
 import { FailoverProvider } from '../providers/failoverProvider.js';
-// import { formatDuration } from '../utils/time.js';
 import { CHART_WINDOWS, OverviewData } from '../providers/types.js';
 
 interface OverviewProps {

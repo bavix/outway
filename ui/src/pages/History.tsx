@@ -4,7 +4,6 @@ import { useHistory, useHistoryActions } from '../store/store.js';
 import { FailoverProvider } from '../providers/failoverProvider.js';
 // import type { QueryEvent } from '../providers/types.js';
 import { formatQType, formatUpstream, formatTimestamp } from '../utils/format.js';
-import { formatDuration } from '../utils/time.js';
 
 interface HistoryProps {
   provider: FailoverProvider;
@@ -152,7 +151,7 @@ export function History({ provider }: HistoryProps) {
                       {formatUpstream(event.upstream)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {formatDuration(event.duration_ms)}
+                      {event.duration}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${

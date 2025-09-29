@@ -33,22 +33,6 @@ export function generateTimeLabels(windowSeconds: number, dataPoints: number): s
   });
 }
 
-/**
- * Format duration in milliseconds to human readable format
- */
-export function formatDuration(ms: number): string {
-  if (ms < 1000) {
-    return `${ms.toFixed(1)}ms`;
-  }
-  
-  const seconds = ms / 1000;
-  if (seconds < 60) {
-    return `${seconds.toFixed(2)}s`;
-  }
-  
-  const minutes = seconds / 60;
-  return `${minutes.toFixed(1)}m`;
-}
 
 /**
  * Format RPS (requests per second) value

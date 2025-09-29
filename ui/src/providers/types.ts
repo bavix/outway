@@ -12,7 +12,7 @@ export interface QueryEvent {
   name: string;
   qtype: number;
   upstream: string;
-  duration_ms: number;
+  duration: string;
   status: 'ok' | 'error';
 }
 
