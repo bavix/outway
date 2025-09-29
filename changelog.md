@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.11 - 2025-09-29
+
+### What's Changed
+
+* Enhance DNS proxy to extract and log client IP by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/25
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.0.10...v1.0.11
+
 ## v1.0.10 - 2025-09-29
 
 ### What's Changed
