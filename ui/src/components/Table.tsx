@@ -72,7 +72,7 @@ export function Table<T extends Record<string, any>>({
   return (
     <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden ${className}`}>
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full table-auto">
           <thead>
             <tr className="border-b border-gray-200 dark:border-gray-700">
               {columns.map((column, index) => (
@@ -102,7 +102,7 @@ export function Table<T extends Record<string, any>>({
                   return (
                     <td
                       key={colIndex}
-                      className={`px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 ${column.className || ''}`}
+                      className={`px-4 sm:px-6 py-3 sm:py-4 whitespace-normal sm:whitespace-nowrap break-words text-sm text-gray-900 dark:text-gray-100 ${column.className || ''}`}
                     >
                       {column.render ? column.render(value, item) : value}
                     </td>
