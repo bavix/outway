@@ -76,6 +76,7 @@ const Update = ({ provider }: UpdateProps) => {
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [pinging, setPinging] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
 
@@ -152,6 +153,51 @@ const Update = ({ provider }: UpdateProps) => {
     }
   };
 
+  const pingServer = async (maxAttempts = 30, interval = 2000) => {
+    setPinging(true);
+    let attempts = 0;
+    
+    const ping = async (): Promise<boolean> => {
+      try {
+        const response = await fetch('/api/v1/update/status', { 
+          method: 'HEAD',
+          signal: AbortSignal.timeout(5000) // 5 second timeout
+        });
+        return response.ok;
+      } catch {
+        return false;
+      }
+    };
+
+    const checkServer = async () => {
+      attempts++;
+      
+      if (attempts > maxAttempts) {
+        setPinging(false);
+        showToast('Server did not come back online after installation. Please check manually.', 'error');
+        return;
+      }
+
+      const isOnline = await ping();
+      
+      if (isOnline) {
+        setPinging(false);
+        showToast('Server is back online! Reloading page...', 'success');
+        // Reload the page after a short delay
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+        return;
+      }
+
+      // Continue pinging
+      setTimeout(checkServer, interval);
+    };
+
+    showToast('Installation complete. Waiting for server to restart...', 'success');
+    checkServer();
+  };
+
   const installUpdate = async () => {
     if (!downloadedPath) return;
 
@@ -172,8 +218,11 @@ const Update = ({ provider }: UpdateProps) => {
       }
 
       const data = await response.json();
-      showToast(data.message || 'Update installed successfully. Please restart the application.', 'success');
+      showToast(data.message || 'Update installed successfully. Server will restart...', 'success');
       setDownloadedPath(null);
+      
+      // Start pinging the server
+      await pingServer();
     } catch (error) {
       showToast(`Failed to install update: ${error}`, 'error');
     } finally {
@@ -360,11 +409,11 @@ const Update = ({ provider }: UpdateProps) => {
                   ) : (
                     <Button
                       onClick={installUpdate}
-                      disabled={installing}
+                      disabled={installing || pinging}
                       className="flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium"
                     >
                       {installing ? <LoadingSpinner size="sm" /> : null}
-                      Install Update
+                      {pinging ? 'Waiting for server...' : 'Install Update'}
                     </Button>
                   )}
                 </div>
