@@ -18,6 +18,7 @@ const (
 type HostsResolver struct {
 	Next  Resolver
 	Hosts []config.HostOverride
+	Cfg   *config.Config
 }
 
 func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) { //nolint:gocognit,cyclop,funlen
@@ -61,7 +62,11 @@ func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, stri
 		return h.Next.Resolve(ctx, q)
 	}
 
-	// Build response
+	// Clamp TTL to configured cache bounds if available
+	if h.Cfg != nil && h.Cfg.Cache.Enabled {
+		ttl = uint32(max(h.Cfg.Cache.MinTTLSeconds, min(int(ttl), h.Cfg.Cache.MaxTTLSeconds))) //nolint:gosec // TTL bounds validated in config
+	}
+
 	m := new(dns.Msg)
 	m.SetReply(q)
 	m.Authoritative = true

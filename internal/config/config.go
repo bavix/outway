@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,8 @@ var (
 	errRuleGroupContainsEmptyPattern = errors.New("rule group contains empty pattern")
 	errDuplicateRulePattern          = errors.New("duplicate rule pattern")
 	errAddressMustBeHostPort         = errors.New("address must be host:port or :port")
+	errCacheTTLBoundsMustBeNonNeg    = errors.New("cache ttl bounds must be non-negative")
+	errCacheMinTTLGreaterThanMax     = errors.New("cache min_ttl_seconds cannot be greater than max_ttl_seconds")
 )
 
 const (
@@ -171,6 +174,12 @@ type CacheConfig struct {
 	Enabled    bool `yaml:"enabled,omitempty"`
 	MaxEntries int  `yaml:"max_entries,omitempty"`
 	MaxSizeMB  int  `yaml:"max_size_mb,omitempty"`
+	// MinTTLSeconds bounds the minimum TTL stored in cache (default 60s)
+	MinTTLSeconds int `yaml:"min_ttl_seconds,omitempty"`
+	// MaxTTLSeconds bounds the maximum TTL stored in cache (default 3600s)
+	MaxTTLSeconds int `yaml:"max_ttl_seconds,omitempty"`
+	// ServeStale enables serve-stale with background refresh (default true)
+	ServeStale bool `yaml:"serve_stale,omitempty"`
 }
 
 // HTTPConfig defines HTTP admin server settings.
@@ -216,12 +225,19 @@ type HostOverride struct {
 }
 
 func (c *Config) GetMinMarkTTL(ttl uint32) time.Duration {
-	const minTTL = 30 // minimum TTL for DNS records
-	if ttl < minTTL {
-		return defaultMinTTL
+	minTTL := 60
+	if c.Cache.MinTTLSeconds > 0 {
+		minTTL = c.Cache.MinTTLSeconds
 	}
 
-	return time.Duration(ttl) * time.Second
+	maxTTL := 3600
+	if c.Cache.MaxTTLSeconds > 0 {
+		maxTTL = c.Cache.MaxTTLSeconds
+	}
+
+	v := max(minTTL, min(int(ttl), maxTTL))
+
+	return time.Duration(v) * time.Second
 }
 
 // GetAllRules returns all rules from all rule groups with their via interface.
@@ -262,24 +278,26 @@ func (c *Config) GetUpstreamAddresses() []string {
 
 // GetUpstreamsByWeight returns upstreams sorted by weight (desc), default weight=1.
 func (c *Config) GetUpstreamsByWeight() []UpstreamConfig {
-	ups := make([]UpstreamConfig, 0, len(c.Upstreams))
-	for _, u := range c.Upstreams {
-		w := u.Weight
-		if w <= 0 {
-			w = 1
+	ups := make([]UpstreamConfig, len(c.Upstreams))
+	copy(ups, c.Upstreams)
+
+	for i := range ups {
+		if ups[i].Weight <= 0 {
+			ups[i].Weight = 1
+		}
+	}
+
+	slices.SortFunc(ups, func(a, b UpstreamConfig) int {
+		if a.Weight == b.Weight {
+			return 0
 		}
 
-		u.Weight = w
-		ups = append(ups, u)
-	}
-	// simple bubble-less sort (small N)
-	for i := 0; i < len(ups); i++ {
-		for j := i + 1; j < len(ups); j++ {
-			if ups[j].Weight > ups[i].Weight {
-				ups[i], ups[j] = ups[j], ups[i]
-			}
+		if a.Weight > b.Weight {
+			return -1
 		}
-	}
+
+		return 1
+	})
 
 	return ups
 }
@@ -355,6 +373,24 @@ func Load(path string) (*Config, error) { //nolint:cyclop,funlen
 
 	if cfg.Cache.MaxEntries <= 0 && cfg.Cache.MaxSizeMB <= 0 {
 		cfg.Cache.MaxEntries = 10000
+	}
+
+	// Set default cache TTL bounds and serve-stale behavior
+	if cfg.Cache.MinTTLSeconds <= 0 {
+		cfg.Cache.MinTTLSeconds = 60
+	}
+
+	if cfg.Cache.MaxTTLSeconds <= 0 {
+		cfg.Cache.MaxTTLSeconds = 3600
+	}
+
+	if !cfg.Cache.ServeStale {
+		cfg.Cache.ServeStale = true
+	}
+
+	// normalize invariants once
+	if cfg.Cache.MaxTTLSeconds < cfg.Cache.MinTTLSeconds {
+		cfg.Cache.MaxTTLSeconds = cfg.Cache.MinTTLSeconds
 	}
 
 	// Set default values for rule groups
@@ -439,6 +475,15 @@ func (c *Config) Validate() error { //nolint:gocognit,cyclop,funlen
 		if c.Cache.Enabled {
 			if c.Cache.MaxEntries < 0 || c.Cache.MaxSizeMB < 0 {
 				return errCacheLimitsMustBeNonNegative
+			}
+
+			// TTL bounds sanity
+			if c.Cache.MinTTLSeconds < 0 || c.Cache.MaxTTLSeconds < 0 {
+				return errCacheTTLBoundsMustBeNonNeg
+			}
+
+			if c.Cache.MaxTTLSeconds > 0 && c.Cache.MinTTLSeconds > c.Cache.MaxTTLSeconds {
+				return errCacheMinTTLGreaterThanMax
 			}
 		}
 

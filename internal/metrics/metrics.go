@@ -1,4 +1,3 @@
-//nolint:gochecknoglobals // prometheus metrics and global state
 package metrics
 
 import (
@@ -13,10 +12,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-const (
-	msToSecondsDivisor = 1000.0
-)
-
+//nolint:gochecknoglobals // prometheus collectors are package-level singletons
 var (
 	DNSQueriesTotal = promauto.NewCounterVec(
 		prom.CounterOpts{
@@ -221,6 +217,7 @@ func IncResolveError(upstream string) {
 // Simple in-memory RPS ring (per process).
 const rpsWindow = 60
 
+//nolint:gochecknoglobals // process-level RPS ring buffers
 var (
 	rpsHits    [rpsWindow]uint64
 	rpsMisses  [rpsWindow]uint64
@@ -351,7 +348,7 @@ func GatherStats(service string) (Stats, error) { //nolint:gocognit,cyclop,funle
 			for _, m := range mf.GetMetric() {
 				if withService(m) {
 					h := m.GetHistogram()
-					rttSum += h.GetSampleSum() / msToSecondsDivisor
+					rttSum += h.GetSampleSum()
 					rttCount += float64(h.GetSampleCount())
 				}
 			}
@@ -359,7 +356,7 @@ func GatherStats(service string) (Stats, error) { //nolint:gocognit,cyclop,funle
 			for _, m := range mf.GetMetric() {
 				if withService(m) {
 					h := m.GetHistogram()
-					reqSum += h.GetSampleSum() / msToSecondsDivisor
+					reqSum += h.GetSampleSum()
 					reqCount += float64(h.GetSampleCount())
 				}
 			}
