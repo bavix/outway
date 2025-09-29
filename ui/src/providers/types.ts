@@ -14,6 +14,7 @@ export interface QueryEvent {
   upstream: string;
   duration: string;
   status: 'ok' | 'error';
+  client_ip: string;
 }
 
 export interface Stats {

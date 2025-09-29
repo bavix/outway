@@ -274,6 +274,9 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 
 		start := time.Now()
 
+		// Extract client IP from ResponseWriter and EDNS0 options
+		clientIP := extractClientIP(w, r)
+
 		// Validate DNS message
 		if r == nil {
 			zerolog.Ctx(ctx).Warn().Msg("received nil DNS message")
@@ -312,6 +315,7 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 					Duration: duration.String(),
 					Status:   "error",
 					Time:     time.Now(),
+					ClientIP: clientIP,
 				})
 			}
 
@@ -337,6 +341,7 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 				Duration: duration.String(),
 				Status:   "ok",
 				Time:     time.Now(),
+				ClientIP: clientIP,
 			})
 		}
 
@@ -676,6 +681,7 @@ type QueryEvent struct {
 	Duration string    `json:"duration"`
 	Status   string    `json:"status"`
 	Time     time.Time `json:"time"`
+	ClientIP string    `json:"client_ip"`
 }
 
 func (p *Proxy) addHistory(ev QueryEvent) { //nolint:funcorder
@@ -732,6 +738,68 @@ func (p *Proxy) History() []QueryEvent {
 	}
 
 	return out
+}
+
+// extractClientIPFromEDNS0 extracts client IP from EDNS0 Client Subnet option.
+func extractClientIPFromEDNS0(r *dns.Msg) string {
+	if r == nil || r.IsEdns0() == nil {
+		return ""
+	}
+
+	for _, option := range r.IsEdns0().Option {
+		subnet, ok := option.(*dns.EDNS0_SUBNET)
+		if !ok {
+			continue
+		}
+
+		ip := extractIPFromSubnet(subnet)
+		if ip != "" {
+			return ip
+		}
+	}
+
+	return ""
+}
+
+// extractIPFromSubnet extracts IP from EDNS0 subnet option.
+func extractIPFromSubnet(subnet *dns.EDNS0_SUBNET) string {
+	if subnet.Family == 1 && len(subnet.Address) >= 4 { // IPv4
+		if !subnet.Address.IsUnspecified() {
+			return subnet.Address.String()
+		}
+	} else if subnet.Family == 2 && len(subnet.Address) >= 16 { // IPv6
+		if !subnet.Address.IsUnspecified() {
+			return subnet.Address.String()
+		}
+	}
+
+	return ""
+}
+
+// extractClientIPFromRemoteAddr extracts client IP from RemoteAddr.
+func extractClientIPFromRemoteAddr(w dns.ResponseWriter) string {
+	addr := w.RemoteAddr()
+	if addr == nil {
+		return "unknown"
+	}
+
+	if host, _, err := net.SplitHostPort(addr.String()); err == nil {
+		return host
+	}
+
+	return addr.String()
+}
+
+// extractClientIP extracts the real client IP from DNS request.
+// Uses EDNS0 Client Subnet if available, otherwise falls back to RemoteAddr.
+func extractClientIP(w dns.ResponseWriter, r *dns.Msg) string {
+	// Try EDNS0 Client Subnet first (standard way to get real client IP)
+	if ip := extractClientIPFromEDNS0(r); ip != "" {
+		return ip
+	}
+
+	// Fallback to RemoteAddr (direct connection or no EDNS0)
+	return extractClientIPFromRemoteAddr(w)
 }
 
 // ensure import usage.
