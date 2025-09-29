@@ -460,11 +460,7 @@ func parseUpstream(u string) (string, string) { //nolint:cyclop
 }
 
 func minTTL(ttl uint32) uint32 {
-	if ttl < defaultMinTTL {
-		return defaultMinTTL
-	}
-
-	return ttl
+	return max(ttl, defaultMinTTL)
 }
 
 // Rules returns the rule store for admin helpers.

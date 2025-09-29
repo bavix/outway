@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
@@ -63,7 +61,7 @@ func newRunCmd() *cobra.Command { //nolint:cyclop,funlen
 
 			if dryRun {
 				for _, tunnel := range tunnelList {
-					log.Info().Str("tunnel", tunnel).Str("backend", backend.Name()).Msg("dry-run ensure policy")
+					log.Info().Str("tunnel", tunnel).Str("backend", backend.Name()).Msg("dry-run tunnel validation")
 				}
 
 				log.Info().Msg("dry-run complete")
@@ -73,25 +71,13 @@ func newRunCmd() *cobra.Command { //nolint:cyclop,funlen
 
 			defer func() { _ = backend.CleanupAll(ctx) }()
 
-			// Initialize tunnels with dynamic table management
+			// Log configured tunnels (no initialization needed for simple backend)
 			if len(tunnelList) > 0 {
-				tunnelInfos, err := backend.InitializeTunnels(ctx, tunnelList)
-				if err != nil {
-					return fmt.Errorf("failed to initialize tunnels: %w", err)
-				}
-
 				log.Info().
-					Int("tunnels", len(tunnelInfos)).
-					Msg("tunnels initialized with dynamic tables")
-
-				for _, info := range tunnelInfos {
-					log.Info().
-						Str("tunnel", info.Name).
-						Int("table", info.TableID).
-						Int("fwmark", info.FwMark).
-						Int("priority", info.Priority).
-						Msg("tunnel configured")
-				}
+					Int("tunnels", len(tunnelList)).
+					Strs("tunnel_list", tunnelList).
+					Str("backend", backend.Name()).
+					Msg("tunnels configured")
 			}
 
 			proxy := dnsproxy.New(cfg, backend)
