@@ -300,19 +300,18 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 			if len(r.Question) > 0 {
 				q := r.Question[0]
 
-				dms := time.Since(start).Milliseconds()
-				if dms == 0 {
-					// Avoid displaying 0ms for sub-millisecond handling
-					dms = 1
+				duration := time.Since(start)
+				if duration == 0 {
+					duration = time.Microsecond
 				}
 
 				p.addHistory(QueryEvent{
-					Name:       strings.TrimSuffix(q.Name, "."),
-					QType:      q.Qtype,
-					Upstream:   usedUpstream,
-					DurationMs: dms,
-					Status:     "error",
-					Time:       time.Now(),
+					Name:     strings.TrimSuffix(q.Name, "."),
+					QType:    q.Qtype,
+					Upstream: usedUpstream,
+					Duration: duration.String(),
+					Status:   "error",
+					Time:     time.Now(),
 				})
 			}
 
@@ -326,19 +325,18 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 		if len(r.Question) > 0 {
 			q := r.Question[0]
 
-			dms := time.Since(start).Milliseconds()
-			if dms == 0 {
-				// Avoid displaying 0ms for sub-millisecond handling
-				dms = 1
+			duration := time.Since(start)
+			if duration == 0 {
+				duration = time.Microsecond
 			}
 
 			p.addHistory(QueryEvent{
-				Name:       strings.TrimSpace(strings.TrimSuffix(q.Name, ".")),
-				QType:      q.Qtype,
-				Upstream:   usedUpstream,
-				DurationMs: dms,
-				Status:     "ok",
-				Time:       time.Now(),
+				Name:     strings.TrimSpace(strings.TrimSuffix(q.Name, ".")),
+				QType:    q.Qtype,
+				Upstream: usedUpstream,
+				Duration: duration.String(),
+				Status:   "ok",
+				Time:     time.Now(),
 			})
 		}
 
@@ -676,12 +674,12 @@ func (p *Proxy) SetUpstreams(ctx context.Context, us []string) error { //nolint:
 
 // QueryEvent represents one DNS query record for in-memory history.
 type QueryEvent struct {
-	Name       string    `json:"name"`
-	QType      uint16    `json:"qtype"`
-	Upstream   string    `json:"upstream"`
-	DurationMs int64     `json:"duration_ms"`
-	Status     string    `json:"status"`
-	Time       time.Time `json:"time"`
+	Name     string    `json:"name"`
+	QType    uint16    `json:"qtype"`
+	Upstream string    `json:"upstream"`
+	Duration string    `json:"duration"`
+	Status   string    `json:"status"`
+	Time     time.Time `json:"time"`
 }
 
 func (p *Proxy) addHistory(ev QueryEvent) { //nolint:funcorder

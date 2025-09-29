@@ -477,19 +477,28 @@ func (r *routeBackend) findAvailableTableID(ctx context.Context) (int, error) {
 		}
 	}
 
-	// Last resort: try all IDs in range
-	zerolog.Ctx(ctx).Warn().Msg("sequential and sampling search failed, trying all IDs in range")
+	// Last resort: try a limited sample of IDs to avoid performance issues
+	zerolog.Ctx(ctx).Warn().Msg("sequential and sampling search failed, trying limited sample")
 
-	for tableID := RoutingTableBase; tableID <= RoutingTableMax; tableID++ {
+	// Try only a small sample of IDs to avoid checking all 1000 tables
+	sampleSize := 50
+	step := (RoutingTableMax - RoutingTableBase) / sampleSize
+
+	for i := 0; i < sampleSize; i++ {
+		tableID := RoutingTableBase + (i * step)
+		if tableID > RoutingTableMax {
+			break
+		}
+
 		if r.isTableIDAvailable(ctx, tableID) {
 			r.nextTableID = tableID + 1
-			zerolog.Ctx(ctx).Debug().Int("tableID", tableID).Msg("found available table ID via exhaustive search")
+			zerolog.Ctx(ctx).Debug().Int("tableID", tableID).Msg("found available table ID via limited sample")
 
 			return tableID, nil
 		}
 	}
 
-	return 0, fmt.Errorf("%w in range %d-%d", ErrNoAvailableTableIDs, RoutingTableBase, RoutingTableMax)
+	return 0, fmt.Errorf("%w in range %d-%d (checked limited sample)", ErrNoAvailableTableIDs, RoutingTableBase, RoutingTableMax)
 }
 
 // hasOutwayMarker checks if a table contains any outway marker route.
@@ -564,16 +573,9 @@ func (r *routeBackend) cleanupOldOutwayTables(ctx context.Context) error {
 		}
 	}
 
-	// CRITICAL: Also clean up any tables in our range that might be empty but still exist
-	zerolog.Ctx(ctx).Info().Msg("cleaning up empty tables in outway range")
-
-	for tableID := RoutingTableBase; tableID <= RoutingTableMax; tableID++ {
-		if r.isTableIDAvailable(ctx, tableID) {
-			// Table is empty, but let's make sure it's really clean
-			zerolog.Ctx(ctx).Debug().Int("tableID", tableID).Msg("table is empty, ensuring clean state")
-			r.flushTableRoutes(ctx, tableID)
-		}
-	}
+	// CRITICAL: Only clean up tables that are actually in use by outway
+	// Don't check all 1000 tables in range - this is too expensive
+	zerolog.Ctx(ctx).Debug().Msg("skipping bulk table cleanup to avoid performance issues")
 
 	// CRITICAL: Return errors if any cleanup failed
 	if len(cleanupErrors) > 0 {
@@ -877,7 +879,10 @@ func (r *routeBackend) isTableIDAvailable(ctx context.Context, tableID int) bool
 	output := strings.TrimSpace(string(out))
 	isEmpty := len(output) == 0
 
-	zerolog.Ctx(ctx).Debug().Int("tableID", tableID).Bool("isEmpty", isEmpty).Str("output", output).Msg("table availability check")
+	// Only log detailed info for non-empty tables to reduce log spam
+	if !isEmpty {
+		zerolog.Ctx(ctx).Debug().Int("tableID", tableID).Bool("isEmpty", isEmpty).Str("output", output).Msg("table availability check")
+	}
 
 	return isEmpty
 }
@@ -1096,7 +1101,16 @@ func (r *routeBackend) addIPToNftSet(ctx context.Context, ip, tunnel string, ttl
 // createRouteForIPInTable creates a route for IP in specific table.
 func (r *routeBackend) createRouteForIPInTable(ctx context.Context, ip, iface string, tableID int) error {
 	tableIDStr := strconv.Itoa(tableID)
-	cmd := exec.CommandContext(ctx, "ip", "route", "add", ip+"/32", "dev", iface, "table", tableIDStr) //nolint:gosec
+
+	// Use host mask depending on IP family
+	mask := "/32"
+	if IsIPv6(ip) {
+		mask = "/128"
+	}
+
+	// Align with manually working command: ensure proto static and scope link
+	// ip route add <ip> dev <iface> proto static scope link table <table>
+	cmd := exec.CommandContext(ctx, "ip", "route", "add", ip+mask, "dev", iface, "proto", "static", "scope", "link", "table", tableIDStr) //nolint:gosec
 
 	if out, err := cmd.CombinedOutput(); err != nil {
 		if !strings.Contains(string(out), "File exists") {
