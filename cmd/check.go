@@ -68,9 +68,7 @@ func newCheckCmd() *cobra.Command {
 			}
 
 			// Check firewall rules
-			if err := checkFirewallRules(ctx, backend.Name()); err != nil {
-				log.Warn().Err(err).Msg("firewall rules check failed")
-			}
+			checkFirewallRules(ctx, backend.Name())
 
 			log.Info().Msg("system check completed successfully")
 
@@ -110,6 +108,7 @@ func checkSystemTools(ctx context.Context, backend string) error {
 	return nil
 }
 
+//nolint:cyclop
 func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 	log := zerolog.Ctx(ctx)
 
@@ -129,12 +128,14 @@ func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 		cmd = exec.CommandContext(ctx, "ifconfig")
 	} else {
 		log.Warn().Msg("no network interface listing tool found (ip or ifconfig)")
+
 		return nil // Skip interface checking if no tools available
 	}
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Err(err).Msg("failed to list network interfaces")
+
 		return err
 	}
 
@@ -155,6 +156,7 @@ func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 	for iface := range interfaces {
 		if iface == "lo" || iface == "lo0" {
 			log.Debug().Str("iface", iface).Msg("loopback interface (always available)")
+
 			continue
 		}
 
@@ -162,6 +164,7 @@ func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 			log.Info().Str("iface", iface).Msg("interface exists")
 		} else {
 			log.Error().Str("iface", iface).Msg("configured interface not found")
+
 			return fmt.Errorf("%w: %s", errInterfaceNotFound, iface)
 		}
 	}
@@ -169,9 +172,8 @@ func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func checkFirewallRules(ctx context.Context, backend string) error {
+func checkFirewallRules(ctx context.Context, backend string) {
 	// Simplified firewall backends don't need complex rule checking
 	log := zerolog.Ctx(ctx)
 	log.Debug().Str("backend", backend).Msg("firewall rules check skipped for simplified backend")
-	return nil
 }

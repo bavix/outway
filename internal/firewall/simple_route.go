@@ -2,6 +2,7 @@ package firewall
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os/exec"
@@ -13,13 +14,18 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// SimpleRouteBackend uses ip route expires for automatic cleanup
+var (
+	ErrRouteAddFailed    = errors.New("failed to add route")
+	ErrRouteUpdateFailed = errors.New("failed to update route")
+)
+
+// SimpleRouteBackend uses ip route expires for automatic cleanup.
 type SimpleRouteBackend struct {
 	mutex   sync.RWMutex
 	entries map[string]time.Time // Track when routes expire to avoid duplicates
 }
 
-// NewSimpleRouteBackend creates a new simple route backend
+// NewSimpleRouteBackend creates a new simple route backend.
 func NewSimpleRouteBackend() *SimpleRouteBackend {
 	return &SimpleRouteBackend{
 		entries: make(map[string]time.Time),
@@ -28,7 +34,7 @@ func NewSimpleRouteBackend() *SimpleRouteBackend {
 
 func (r *SimpleRouteBackend) Name() string { return "simple_route" }
 
-// MarkIP adds a route with expires based on DNS TTL
+// MarkIP adds a route with expires based on DNS TTL.
 func (r *SimpleRouteBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -48,6 +54,7 @@ func (r *SimpleRouteBackend) MarkIP(ctx context.Context, iface, ip string, ttlSe
 			Str("iface", iface).
 			Int("ttl", ttlSeconds).
 			Msg("route already exists with longer TTL, skipping")
+
 		return nil
 	}
 
@@ -68,7 +75,7 @@ func (r *SimpleRouteBackend) MarkIP(ctx context.Context, iface, ip string, ttlSe
 	return nil
 }
 
-// CleanupAll removes all tracked entries (routes will expire automatically)
+// CleanupAll removes all tracked entries (routes will expire automatically).
 func (r *SimpleRouteBackend) CleanupAll(ctx context.Context) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -82,10 +89,10 @@ func (r *SimpleRouteBackend) CleanupAll(ctx context.Context) error {
 	return nil
 }
 
-// addRouteWithExpires adds a route with expires parameter
+// addRouteWithExpires adds a route with expires parameter.
 func (r *SimpleRouteBackend) addRouteWithExpires(ctx context.Context, ip, iface string, ttlSeconds int) error {
 	// Try to add route with expires
-	cmd := exec.CommandContext(ctx, "ip", "route", "add",
+	cmd := exec.CommandContext(ctx, "ip", "route", "add", //nolint:gosec // ip is validated input
 		ip+"/32", "dev", iface, "proto", "186", "scope", "link", "expires", strconv.Itoa(ttlSeconds))
 
 	out, err := cmd.CombinedOutput()
@@ -98,27 +105,27 @@ func (r *SimpleRouteBackend) addRouteWithExpires(ctx context.Context, ip, iface 
 			return r.updateRouteExpires(ctx, ip, iface, ttlSeconds)
 		}
 
-		return fmt.Errorf("failed to add route: %s", output)
+		return fmt.Errorf("%w: %s", ErrRouteAddFailed, output)
 	}
 
 	return nil
 }
 
-// updateRouteExpires updates the expires time of an existing route
+// updateRouteExpires updates the expires time of an existing route.
 func (r *SimpleRouteBackend) updateRouteExpires(ctx context.Context, ip, iface string, ttlSeconds int) error {
 	// Delete existing route
-	delCmd := exec.CommandContext(ctx, "ip", "route", "del", ip+"/32", "dev", iface)
+	delCmd := exec.CommandContext(ctx, "ip", "route", "del", ip+"/32", "dev", iface) //nolint:gosec // ip is validated input
 	if out, err := delCmd.CombinedOutput(); err != nil {
 		// Route might not exist, continue anyway
 		zerolog.Ctx(ctx).Debug().Bytes("out", out).Msg("route delete failed (may not exist)")
 	}
 
 	// Add route with new expires
-	addCmd := exec.CommandContext(ctx, "ip", "route", "add",
+	addCmd := exec.CommandContext(ctx, "ip", "route", "add", //nolint:gosec // ip is validated input
 		ip+"/32", "dev", iface, "proto", "186", "scope", "link", "expires", strconv.Itoa(ttlSeconds))
 
 	if out, err := addCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to update route: %s", string(out))
+		return fmt.Errorf("%w: %s", ErrRouteUpdateFailed, string(out))
 	}
 
 	zerolog.Ctx(ctx).Debug().
@@ -130,7 +137,7 @@ func (r *SimpleRouteBackend) updateRouteExpires(ctx context.Context, ip, iface s
 	return nil
 }
 
-// shouldSkipRoute checks if we should skip adding a route
+// shouldSkipRoute checks if we should skip adding a route.
 func (r *SimpleRouteBackend) shouldSkipRoute(normalizedIP string, ttlSeconds int) bool {
 	existing, exists := r.entries[normalizedIP]
 	if !exists {
@@ -139,10 +146,11 @@ func (r *SimpleRouteBackend) shouldSkipRoute(normalizedIP string, ttlSeconds int
 
 	// Skip if existing route expires later than new TTL
 	remainingTime := time.Until(existing)
+
 	return remainingTime > time.Duration(ttlSeconds)*time.Second
 }
 
-// validateInputs validates interface and IP inputs
+// validateInputs validates interface and IP inputs.
 func (r *SimpleRouteBackend) validateInputs(iface, ip string) error {
 	if !IsSafeIfaceName(iface) {
 		return fmt.Errorf("%w: %q", ErrInvalidIface, iface)
@@ -155,8 +163,9 @@ func (r *SimpleRouteBackend) validateInputs(iface, ip string) error {
 	return nil
 }
 
-// normalizeTTL ensures TTL is within reasonable bounds
+// normalizeTTL ensures TTL is within reasonable bounds.
 func (r *SimpleRouteBackend) normalizeTTL(ttlSeconds int) int {
 	const maxTTL = 3600 // Maximum 1 hour
+
 	return min(max(ttlSeconds, minTTLSeconds), maxTTL)
 }

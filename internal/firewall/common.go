@@ -15,7 +15,7 @@ const (
 	minTTLSeconds = 30 // Minimum TTL in seconds
 )
 
-// Interface name validation regex
+// Interface name validation regex.
 var IfaceNameRe = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,32}$`)
 
 // IsSafeIfaceName verifies interface names to a conservative charset to avoid injection via args.
@@ -34,10 +34,11 @@ func NormalizeIP(raw string) (string, bool) {
 	if ip.To4() != nil {
 		return ip.To4().String(), true
 	}
+
 	return ip.String(), true
 }
 
-// PFTableName generates a table name for pf backend
+// PFTableName generates a table name for pf backend.
 func PFTableName(iface string) string {
 	return "outway_" + iface
 }
