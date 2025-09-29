@@ -4,6 +4,7 @@ package dnsproxy
 import (
 	"context"
 	"math/rand" // nosemgrep: go.lang.security.audit.crypto.math_random.math-random-used
+	"slices"
 
 	"github.com/miekg/dns"
 
@@ -35,19 +36,24 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 	}
 
 	chain := NewChainResolver(rs...)
-	hosts := &HostsResolver{Next: chain, Hosts: p.cfg.Hosts}
+	hosts := &HostsResolver{Next: chain, Hosts: p.cfg.Hosts, Cfg: p.cfg}
 	mark := &MarkResolver{Next: hosts, Backend: p.backend, Rules: p.rules, Cfg: p.cfg}
 
 	// Build core without metrics first so cache can wrap it
 	var core Resolver = mark
 
 	if p.cfg.Cache.Enabled {
-		maxEntries := p.cfg.Cache.MaxEntries
-		if maxEntries <= 0 {
-			maxEntries = 10000
+		cache := NewCachedResolver(
+			core,
+			p.cfg.Cache.MaxEntries,
+			p.cfg.Cache.MinTTLSeconds,
+			p.cfg.Cache.MaxTTLSeconds,
+		)
+		if p.cfg.Cache.ServeStale {
+			core = &ServeStaleResolver{Cache: cache}
+		} else {
+			core = cache
 		}
-
-		core = NewCachedResolver(core, maxEntries)
 	}
 
 	// Place metrics outermost to include cache/hosts/upstreams in duration
@@ -76,43 +82,42 @@ func (p *Proxy) buildLegacyResolvers(strategies []UpstreamStrategy, deps Strateg
 
 // buildWeightedResolvers creates resolvers grouped by weight with random selection within each group.
 func (p *Proxy) buildWeightedResolvers(ups []config.UpstreamConfig, strategies []UpstreamStrategy, deps StrategyDeps) []Resolver {
-	// Group upstreams by weight
-	weightGroups := make(map[int][]config.UpstreamConfig)
-	for _, u := range ups {
-		weightGroups[u.Weight] = append(weightGroups[u.Weight], u)
-	}
+	// Copy and sort upstreams by weight desc using slices.SortFunc
+	sorted := make([]config.UpstreamConfig, len(ups))
+	copy(sorted, ups)
+	slices.SortFunc(sorted, func(a, b config.UpstreamConfig) int {
+		// desc
+		if a.Weight == b.Weight {
+			return 0
+		}
 
-	// Process weight groups in descending order
-	weights := p.sortWeightsDesc(weightGroups)
+		if a.Weight > b.Weight {
+			return -1
+		}
 
+		return 1
+	})
+
+	// Build resolvers preserving shuffled order within equal weights
 	var rs []Resolver
 
-	for _, weight := range weights {
-		group := weightGroups[weight]
+	i := 0
+	for i < len(sorted) {
+		j := i + 1
+		for j < len(sorted) && sorted[j].Weight == sorted[i].Weight {
+			j++
+		}
+
+		group := sorted[i:j]
 		rs = append(rs, p.buildResolversFromGroup(group, strategies, deps)...)
+		i = j
 	}
 
 	return rs
 }
 
 // sortWeightsDesc returns weights in descending order.
-func (p *Proxy) sortWeightsDesc(weightGroups map[int][]config.UpstreamConfig) []int {
-	weights := make([]int, 0, len(weightGroups))
-	for weight := range weightGroups {
-		weights = append(weights, weight)
-	}
-
-	// Sort weights in descending order
-	for i := 0; i < len(weights); i++ {
-		for j := i + 1; j < len(weights); j++ {
-			if weights[j] > weights[i] {
-				weights[i], weights[j] = weights[j], weights[i]
-			}
-		}
-	}
-
-	return weights
-}
+// sortWeightsDesc removed in favor of slices.SortFunc above
 
 // buildResolversFromGroup creates resolvers from a weight group with random ordering.
 func (p *Proxy) buildResolversFromGroup(group []config.UpstreamConfig, strategies []UpstreamStrategy, deps StrategyDeps) []Resolver {

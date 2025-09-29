@@ -17,21 +17,19 @@ type cacheItem struct {
 }
 
 type CachedResolver struct {
-	Next       Resolver
-	MaxEntries int
+	Next          Resolver
+	MaxEntries    int
+	MinTTLSeconds int
+	MaxTTLSeconds int
 
 	lru *lru.LRU[string, cacheItem]
 	sf  singleflight.Group
 }
 
-func NewCachedResolver(next Resolver, maxEntries int) *CachedResolver {
-	if maxEntries <= 0 {
-		maxEntries = 10000
-	}
-	// default expiration 0 (we handle per-entry TTL manually)
+func NewCachedResolver(next Resolver, maxEntries int, minTTLSeconds int, maxTTLSeconds int) *CachedResolver {
 	l := lru.NewLRU[string, cacheItem](maxEntries, nil, 0)
 
-	return &CachedResolver{Next: next, MaxEntries: maxEntries, lru: l}
+	return &CachedResolver{Next: next, MaxEntries: maxEntries, MinTTLSeconds: minTTLSeconds, MaxTTLSeconds: maxTTLSeconds, lru: l}
 }
 
 func (c *CachedResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) {
@@ -76,7 +74,6 @@ func (c *CachedResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, str
 		return c.resolveAndCache(ctx, q, key)
 	}
 
-	// Build reply with minimal allocations: reuse cached slices (immutable)
 	reply := new(dns.Msg)
 	reply.SetReply(q)
 	reply.RecursionAvailable = it.msg.RecursionAvailable
@@ -86,7 +83,7 @@ func (c *CachedResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, str
 	reply.Ns = it.msg.Ns
 	reply.Extra = it.msg.Extra
 
-	return reply, "cache", nil
+	return reply, sourceCache, nil
 }
 
 func (c *CachedResolver) resolveAndCache(ctx context.Context, q *dns.Msg, key string) (*dns.Msg, string, error) {
@@ -105,12 +102,13 @@ func (c *CachedResolver) put(key string, msg *dns.Msg) {
 
 	ttl := ttlFromMsg(msg)
 	if ttl <= 0 {
-		ttl = 30
+		ttl = uint32(c.MinTTLSeconds) //nolint:gosec // TTL bounds validated in config
 	}
-	// store copy with per-entry expiration
+
+	t := max(c.MinTTLSeconds, min(int(ttl), c.MaxTTLSeconds))
+	ttl = uint32(t) //nolint:gosec // TTL bounds validated in config
 	it := cacheItem{msg: msg.Copy(), expire: time.Now().Add(time.Duration(ttl) * time.Second)}
 	c.lru.Add(key, it)
-	// metrics moved to MetricsResolver; cache exposes only storage behavior
 }
 
 func ttlFromMsg(msg *dns.Msg) uint32 {

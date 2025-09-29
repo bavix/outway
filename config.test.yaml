@@ -76,6 +76,9 @@ log:
 cache:
   enabled: true
   max_entries: 20000
+  min_ttl_seconds: 60
+  max_ttl_seconds: 3600
+  serve_stale: true
 http:
   enabled: true
   listen: 127.0.0.1:47823
