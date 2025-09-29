@@ -16,7 +16,7 @@ export function Header({ onSidebarToggle, provider }: HeaderProps) {
     return () => { off && off(); };
   }, [provider]);
   return (
-    <header className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-100 dark:border-gray-700">
+    <header className="sticky top-0 z-30 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-100 dark:border-gray-700">
       <div className="flex items-center justify-between h-14 px-4">
         {/* Left side */}
         <div className="flex items-center gap-3">
@@ -31,7 +31,12 @@ export function Header({ onSidebarToggle, provider }: HeaderProps) {
               </svg>
             </button>
           )}
-
+          <div className="flex items-center lg:hidden select-none">
+            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded flex items-center justify-center shadow-sm mr-2">
+              <span className="text-white font-bold text-xs">O</span>
+            </div>
+            <span className="text-sm font-semibold text-gray-900 dark:text-white tracking-tight">Outway</span>
+          </div>
         </div>
 
         {/* Right side */}

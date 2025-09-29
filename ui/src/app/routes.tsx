@@ -122,6 +122,7 @@ export function App() {
 
       {/* Main content */}
       <div className={`transition-all duration-300 ${
+        // On large screens, respect collapsed width; on mobile, take full width
         sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
       }`}>
         {/* Header */}
@@ -148,7 +149,7 @@ export function App() {
       {/* Mobile sidebar overlay */}
       {!sidebarCollapsed && (
         <div
-          className="fixed inset-0 z-30 bg-black bg-opacity-50 lg:hidden"
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
           onClick={handleSidebarToggle}
         />
       )}

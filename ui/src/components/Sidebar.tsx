@@ -77,7 +77,10 @@ export function Sidebar({ activeTab, onTabChange, collapsed = false }: SidebarPr
   return (
     <aside className={`fixed left-0 top-0 z-40 h-screen bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm border-r border-gray-100 dark:border-gray-700 transition-all duration-300 ${
       collapsed ? 'w-16' : 'w-64'
-    }`}>
+    } ${
+      // Mobile: transform off-canvas when "collapsed" is true (sidebar hidden)
+      collapsed ? '-translate-x-full lg:translate-x-0' : 'translate-x-0'
+    } lg:translate-x-0`}>
       {/* Header */}
       <div className="flex items-center justify-between h-16 px-3 border-b border-gray-100 dark:border-gray-700">
         {!collapsed && (
@@ -96,7 +99,7 @@ export function Sidebar({ activeTab, onTabChange, collapsed = false }: SidebarPr
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navigation.map((item) => {
           const isActive = activeTab === item.id;
           return (
