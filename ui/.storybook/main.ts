@@ -41,7 +41,7 @@ const config: StorybookConfig = {
       });
     }
 
-          // Skip PostCSS for Storybook - use CSS only
+          // Add PostCSS support for Tailwind CSS
           const cssRule = config.module.rules.find((rule: any) => 
             rule.test && rule.test.toString().includes('css')
           );
@@ -50,6 +50,17 @@ const config: StorybookConfig = {
             cssRule.use = [
               'style-loader',
               'css-loader',
+              {
+                loader: 'postcss-loader',
+                options: {
+                  postcssOptions: {
+                    plugins: [
+                      require('tailwindcss'),
+                      require('autoprefixer'),
+                    ],
+                  },
+                },
+              },
             ];
           }
     
