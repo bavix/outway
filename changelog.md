@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.8 - 2025-09-29
+
+### What's Changed
+
+* Refactor firewall backend to support dynamic tunnel management by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/22
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.0.7...v1.0.8
+
 ## v1.0.7 - 2025-09-26
 
 ### What's Changed
