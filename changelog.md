@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.10 - 2025-09-29
+
+### What's Changed
+
+* Update UI assets and improve layout responsiveness by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/24
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.0.9...v1.0.10
+
 ## v1.0.9 - 2025-09-29
 
 ### What's Changed
