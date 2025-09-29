@@ -48,14 +48,20 @@ func newRunCmd() *cobra.Command { //nolint:cyclop,funlen
 				return err
 			}
 
-			if dryRun {
-				ifaces := map[string]struct{}{}
-				for _, r := range cfg.GetAllRules() {
-					ifaces[r.Via] = struct{}{}
-				}
+			// Extract tunnel interfaces from config
+			tunnels := map[string]struct{}{}
+			for _, r := range cfg.GetAllRules() {
+				tunnels[r.Via] = struct{}{}
+			}
 
-				for iface := range ifaces {
-					log.Info().Str("iface", iface).Str("backend", backend.Name()).Msg("dry-run ensure policy")
+			tunnelList := make([]string, 0, len(tunnels))
+			for tunnel := range tunnels {
+				tunnelList = append(tunnelList, tunnel)
+			}
+
+			if dryRun {
+				for _, tunnel := range tunnelList {
+					log.Info().Str("tunnel", tunnel).Str("backend", backend.Name()).Msg("dry-run tunnel validation")
 				}
 
 				log.Info().Msg("dry-run complete")
@@ -65,17 +71,13 @@ func newRunCmd() *cobra.Command { //nolint:cyclop,funlen
 
 			defer func() { _ = backend.CleanupAll(ctx) }()
 
-			_ = backend.CleanupAll(ctx)
-
-			ifaces := map[string]struct{}{}
-			for _, r := range cfg.GetAllRules() {
-				ifaces[r.Via] = struct{}{}
-			}
-
-			for iface := range ifaces {
-				if err := backend.EnsurePolicy(ctx, iface); err != nil {
-					return err
-				}
+			// Log configured tunnels (no initialization needed for simple backend)
+			if len(tunnelList) > 0 {
+				log.Info().
+					Int("tunnels", len(tunnelList)).
+					Strs("tunnel_list", tunnelList).
+					Str("backend", backend.Name()).
+					Msg("tunnels configured")
 			}
 
 			proxy := dnsproxy.New(cfg, backend)

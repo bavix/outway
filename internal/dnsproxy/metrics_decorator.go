@@ -17,9 +17,9 @@ func (m *MetricsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, st
 	metrics.M.DNSQueries.Inc()
 
 	out, src, err := m.Next.Resolve(ctx, q)
-	durMs := float64(time.Since(start).Milliseconds())
-	metrics.M.RequestDuration.Observe(durMs)
-	metrics.ObserveRequestDurationUpstream(src, durMs)
+	durSec := time.Since(start).Seconds()
+	metrics.M.RequestDuration.Observe(durSec)
+	metrics.ObserveRequestDurationUpstream(src, durSec)
 
 	if err != nil {
 		metrics.IncResolveError(src)

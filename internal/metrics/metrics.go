@@ -78,14 +78,14 @@ var (
 	DNSRequestDuration = promauto.NewHistogramVec(prom.HistogramOpts{
 		Name:    "dns_request_duration_seconds",
 		Help:    "End-to-end DNS request duration in seconds (Histogram).",
-		Buckets: []float64{0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0},
+		Buckets: []float64{0.0001, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0},
 	}, []string{"service"})
 
 	// DNSRequestDurationByUpstream is labeled per upstream.
 	DNSRequestDurationByUpstream = promauto.NewHistogramVec(prom.HistogramOpts{
 		Name:    "dns_request_duration_seconds_by_upstream",
 		Help:    "DNS request duration in seconds by upstream (Histogram).",
-		Buckets: []float64{0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0},
+		Buckets: []float64{0.0001, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0},
 	}, []string{"service", "upstream"})
 	ResolveErrorsTotal = promauto.NewCounterVec(prom.CounterOpts{
 		Name: "dns_resolve_errors_total",
@@ -201,12 +201,12 @@ func BindService() {
 }
 
 // ObserveRequestDurationUpstream records duration with upstream label.
-func ObserveRequestDurationUpstream(upstream string, ms float64) {
+func ObserveRequestDurationUpstream(upstream string, sec float64) {
 	if upstream == "" {
 		upstream = "unknown"
 	}
 
-	DNSRequestDurationByUpstream.WithLabelValues(Service(), upstream).Observe(ms)
+	DNSRequestDurationByUpstream.WithLabelValues(Service(), upstream).Observe(sec)
 }
 
 // IncResolveError increments error counter for upstream.

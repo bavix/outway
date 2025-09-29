@@ -68,9 +68,7 @@ func newCheckCmd() *cobra.Command {
 			}
 
 			// Check firewall rules
-			if err := checkFirewallRules(ctx, backend.Name()); err != nil {
-				log.Warn().Err(err).Msg("firewall rules check failed")
-			}
+			checkFirewallRules(ctx, backend.Name())
 
 			log.Info().Msg("system check completed successfully")
 
@@ -84,9 +82,17 @@ func newCheckCmd() *cobra.Command {
 func checkSystemTools(ctx context.Context, backend string) error {
 	log := zerolog.Ctx(ctx)
 
-	tools := []string{"nft", "ip"}
-	if backend == "iptables" {
-		tools = append(tools, "iptables", "ipset")
+	var tools []string
+
+	switch backend {
+	case "simple_route":
+		tools = []string{"ip"} // Only need ip command for simple route backend
+	case "pf":
+		tools = []string{"pfctl", "route"} // pf backend needs pfctl and route
+	case "iptables":
+		tools = []string{"iptables", "ipset"} // iptables backend
+	default:
+		tools = []string{"ip"} // Default to ip command
 	}
 
 	for _, tool := range tools {
@@ -102,6 +108,7 @@ func checkSystemTools(ctx context.Context, backend string) error {
 	return nil
 }
 
+//nolint:cyclop
 func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 	log := zerolog.Ctx(ctx)
 
@@ -111,8 +118,19 @@ func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 		interfaces[rule.Via] = struct{}{}
 	}
 
-	// Check if interfaces exist
-	cmd := exec.CommandContext(ctx, "ip", "link", "show")
+	// Check if interfaces exist using appropriate command for OS
+	var cmd *exec.Cmd
+	if _, err := exec.LookPath("ip"); err == nil {
+		// Linux: use ip command
+		cmd = exec.CommandContext(ctx, "ip", "link", "show")
+	} else if _, err := exec.LookPath("ifconfig"); err == nil {
+		// macOS/BSD: use ifconfig command
+		cmd = exec.CommandContext(ctx, "ifconfig")
+	} else {
+		log.Warn().Msg("no network interface listing tool found (ip or ifconfig)")
+
+		return nil // Skip interface checking if no tools available
+	}
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -128,7 +146,7 @@ func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 		if strings.Contains(line, ":") {
 			parts := strings.Fields(line)
 			if len(parts) >= minPartsForInterface {
-				name := strings.TrimSuffix(parts[1], ":")
+				name := strings.TrimSuffix(parts[0], ":") // ifconfig uses name at start, ip uses at position 1
 				availableInterfaces[name] = true
 			}
 		}
@@ -136,7 +154,7 @@ func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 
 	// Check configured interfaces
 	for iface := range interfaces {
-		if iface == "lo" {
+		if iface == "lo" || iface == "lo0" {
 			log.Debug().Str("iface", iface).Msg("loopback interface (always available)")
 
 			continue
@@ -154,66 +172,8 @@ func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func checkFirewallRules(ctx context.Context, backend string) error {
-	switch backend {
-	case "nftables":
-		return checkNFTablesRules(ctx)
-	case "iptables":
-		return checkIPTablesRules(ctx)
-	}
-
-	return nil
-}
-
-func checkNFTablesRules(ctx context.Context) error {
+func checkFirewallRules(ctx context.Context, backend string) {
+	// Simplified firewall backends don't need complex rule checking
 	log := zerolog.Ctx(ctx)
-
-	// Check if outway table exists
-	cmd := exec.CommandContext(ctx, "nft", "list", "table", "inet", "outway")
-
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Debug().Str("out", string(out)).Msg("outway table not found (normal if not started)")
-
-		return err
-	}
-
-	log.Info().Msg("outway nftables table found")
-	log.Debug().Str("table", string(out)).Msg("table contents")
-
-	// Check if mangle chain exists
-	cmd = exec.CommandContext(ctx, "nft", "list", "chain", "inet", "mangle", "outway_mark")
-
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		log.Debug().Str("out", string(out)).Msg("outway_mark chain not found")
-	} else {
-		log.Info().Msg("outway_mark chain found")
-		log.Debug().Str("chain", string(out)).Msg("chain contents")
-	}
-
-	return nil
-}
-
-func checkIPTablesRules(ctx context.Context) error {
-	log := zerolog.Ctx(ctx)
-
-	// Check if ipset rules exist
-	cmd := exec.CommandContext(ctx, "ipset", "list")
-
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Debug().Err(err).Msg("failed to list ipsets")
-
-		return nil
-	}
-
-	if strings.Contains(string(out), "outway_") {
-		log.Info().Msg("outway ipsets found")
-		log.Debug().Bytes("ipsets", out).Msg("ipset contents")
-	} else {
-		log.Debug().Msg("no outway ipsets found (normal if not started)")
-	}
-
-	return nil
+	log.Debug().Str("backend", backend).Msg("firewall rules check skipped for simplified backend")
 }

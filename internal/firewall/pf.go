@@ -17,7 +17,7 @@ type pfBackend struct {
 	timers map[string]*time.Timer // ip -> timer
 }
 
-func newPFBackend() *pfBackend {
+func NewPFBackend() *pfBackend {
 	if _, err := exec.LookPath("pfctl"); err != nil {
 		return nil
 	}
@@ -31,18 +31,10 @@ func newPFBackend() *pfBackend {
 
 func (p *pfBackend) Name() string { return "pf" }
 
-func (p *pfBackend) EnsurePolicy(ctx context.Context, iface string) error {
-	zerolog.Ctx(ctx).Info().Str("iface", iface).Msg("ensure pf policy")
-
-	return nil
-}
-
 func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int) error {
-	if ttlSeconds < minTTLSeconds {
-		ttlSeconds = minTTLSeconds
-	}
+	ttlSeconds = max(ttlSeconds, minTTLSeconds)
 
-	table := pfTableName(iface)
+	table := PFTableName(iface)
 	zerolog.Ctx(ctx).Debug().Str("iface", iface).IPAddr("ip", net.ParseIP(ip)).Int("ttl", ttlSeconds).Msg("mark ip")
 
 	cmd := exec.CommandContext(ctx, "pfctl", "-t", table, "-T", "add", ip) //nolint:gosec // pfctl is a system utility
@@ -112,5 +104,3 @@ func (p *pfBackend) CleanupAll(ctx context.Context) error {
 
 	return nil
 }
-
-func pfTableName(iface string) string { return "outway_" + iface }

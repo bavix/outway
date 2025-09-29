@@ -5,6 +5,8 @@
 *.so
 *.dylib
 dns2egress
+outway
+outway-*
 
 # Test binary, built with `go test -c`
 *.test
