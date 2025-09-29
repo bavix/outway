@@ -349,13 +349,21 @@ func (r *routeBackend) ensureNftTableExists(ctx context.Context) {
 	// Check if chain already exists
 	cmd := exec.CommandContext(ctx, "nft", "list", "chain", "inet", tableName, "outway_mark_chain")
 	if _, err := cmd.CombinedOutput(); err != nil {
-		// Chain doesn't exist, create it
+		// Chain doesn't exist, create it as a base chain for OpenWrt fw4 compatibility
+		// Use forward hook instead of output for better OpenWrt compatibility
 		cmd = exec.CommandContext(ctx, "nft", "create", "chain", "inet", tableName, "outway_mark_chain",
-			"{", "type", "filter", "hook", "output", "priority", "0", ";", "}")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			zerolog.Ctx(ctx).Debug().Bytes("out", out).Str("table", tableName).Msg("nft create chain failed")
+			"{", "type", "filter", "hook", "forward", "priority", "0", ";", "}")
+		if _, err := cmd.CombinedOutput(); err != nil {
+			// If forward hook fails, try prerouting hook
+			cmd = exec.CommandContext(ctx, "nft", "create", "chain", "inet", tableName, "outway_mark_chain",
+				"{", "type", "filter", "hook", "prerouting", "priority", "0", ";", "}")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				zerolog.Ctx(ctx).Error().Bytes("out", out).Str("table", tableName).Msg("nft create chain failed")
+			} else {
+				zerolog.Ctx(ctx).Debug().Str("table", tableName).Msg("nft chain created successfully with prerouting hook")
+			}
 		} else {
-			zerolog.Ctx(ctx).Debug().Str("table", tableName).Msg("nft chain created successfully")
+			zerolog.Ctx(ctx).Debug().Str("table", tableName).Msg("nft chain created successfully with forward hook")
 		}
 	} else {
 		// Chain already exists
@@ -926,8 +934,8 @@ func (r *routeBackend) setupTunnelTable(ctx context.Context, info TunnelInfo, ma
 		zerolog.Ctx(ctx).Debug().Bytes("out", out).Str("table", tableID).Msg("ip route add marker (may already exist)")
 	}
 
-	// Create ip rule for fwmark -> table mapping
-	ruleArgs := []string{"rule", "add", "fwmark", strconv.Itoa(info.FwMark), "table", tableID, "priority", strconv.Itoa(info.Priority)}
+	// Create ip rule for fwmark -> table mapping with high priority for OpenWrt
+	ruleArgs := []string{"rule", "add", "fwmark", strconv.Itoa(info.FwMark), "table", tableID, "priority", strconv.Itoa(info.Priority - 1000)}
 
 	cmd = exec.CommandContext(ctx, "ip", ruleArgs...) //nolint:gosec
 	if out, err := cmd.CombinedOutput(); err != nil {
