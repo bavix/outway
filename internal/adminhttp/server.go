@@ -936,6 +936,7 @@ func extractTTL(answers []dns.RR) *uint32 {
 	}
 
 	ttlValue := answers[0].Header().Ttl
+
 	return &ttlValue
 }
 
