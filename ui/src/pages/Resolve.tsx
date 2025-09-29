@@ -21,7 +21,21 @@ export function Resolve({ provider }: ResolveProps) {
     setResult('');
     try {
       const res = await provider.testResolve(name.trim(), type);
-      const header = `Upstream: ${res.upstream} | RCODE: ${res.rcode} | Answers: ${res.answers}`;
+      const headerParts = [
+        `Upstream: ${res.upstream}`,
+        `RCODE: ${res.rcode}`,
+        `Answers: ${res.answers}`
+      ];
+      
+      if (res.response_time_ms !== undefined) {
+        headerParts.push(`Time: ${res.response_time_ms}ms`);
+      }
+      
+      if (res.ttl !== undefined) {
+        headerParts.push(`TTL: ${res.ttl}s`);
+      }
+      
+      const header = headerParts.join(' | ');
       const body = (res.records || []).join('\n');
       setResult(`${header}\n${body}`);
     } catch (err) {

@@ -122,6 +122,8 @@ export interface ResolveResult {
   rcode: number;
   answers: number;
   records: string[];
+  ttl?: number;
+  response_time_ms?: number;
 }
 
 // Chart data types

@@ -900,7 +900,11 @@ func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Measure response time
+	start := time.Now()
 	out, src, err := resolver.Resolve(r.Context(), m)
+	responseTime := time.Since(start)
+
 	if err != nil {
 		render.Status(r, defaultBadGatewayStatus)
 		render.JSON(w, r, map[string]string{"error": err.Error()})
@@ -908,12 +912,24 @@ func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Extract TTL from first answer record
+	var ttl *uint32
+	if len(out.Answer) > 0 {
+		ttlValue := out.Answer[0].Header().Ttl
+		ttl = &ttlValue
+	}
+
 	// build a compact JSON response
 	resp := map[string]any{
-		"upstream": src,
-		"rcode":    out.Rcode,
-		"answers":  len(out.Answer),
-		"records":  rrToStrings(out.Answer),
+		"upstream":         src,
+		"rcode":            out.Rcode,
+		"answers":          len(out.Answer),
+		"records":          rrToStrings(out.Answer),
+		"response_time_ms": responseTime.Milliseconds(),
+	}
+
+	if ttl != nil {
+		resp["ttl"] = *ttl
 	}
 
 	render.Status(r, http.StatusOK)
