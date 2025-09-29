@@ -912,13 +912,6 @@ func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract TTL from first answer record
-	var ttl *uint32
-	if len(out.Answer) > 0 {
-		ttlValue := out.Answer[0].Header().Ttl
-		ttl = &ttlValue
-	}
-
 	// build a compact JSON response
 	resp := map[string]any{
 		"upstream":         src,
@@ -928,12 +921,22 @@ func (s *Server) handleResolveTest(w http.ResponseWriter, r *http.Request) {
 		"response_time_ms": responseTime.Milliseconds(),
 	}
 
-	if ttl != nil {
+	// Add TTL if available
+	if ttl := extractTTL(out.Answer); ttl != nil {
 		resp["ttl"] = *ttl
 	}
 
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, resp)
+}
+
+func extractTTL(answers []dns.RR) *uint32 {
+	if len(answers) == 0 {
+		return nil
+	}
+
+	ttlValue := answers[0].Header().Ttl
+	return &ttlValue
 }
 
 func rrToStrings(rrs []dns.RR) []string {
