@@ -21,7 +21,11 @@ func (c *ChainResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, stri
 		return nil, "", errNoUpstreamsConfigured
 	}
 
-	var firstErr error
+	var (
+		firstErr     error
+		lastEmptyOut *dns.Msg
+		lastEmptySrc string
+	)
 
 	for _, r := range c.resolvers {
 		if r == nil {
@@ -30,12 +34,23 @@ func (c *ChainResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, stri
 
 		out, src, err := r.Resolve(ctx, q)
 		if err == nil && out != nil {
-			return out, src, nil
+			if len(out.Answer) > 0 {
+				return out, src, nil
+			}
+			// keep last empty response (NOERROR/NODATA)
+			lastEmptyOut = out
+			lastEmptySrc = src
+
+			continue
 		}
 
 		if firstErr == nil {
 			firstErr = err
 		}
+	}
+
+	if lastEmptyOut != nil {
+		return lastEmptyOut, lastEmptySrc, nil
 	}
 
 	if firstErr == nil {

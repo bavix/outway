@@ -184,6 +184,12 @@ func (s *Server) Start(ctx context.Context) error {
 
 	_ = ln.Close()
 
+	// Hook cache change notifier to push invalidation events to UI
+	dnsproxy.SetCacheChangeNotifier(func() {
+		// Send lightweight invalidation; client will refetch current page
+		s.broadcast(map[string]any{"type": "cache_updated", "data": true})
+	})
+
 	// Build middleware chain
 	handler := s.buildMiddlewareChain(ctx)
 
@@ -226,6 +232,8 @@ func (s *Server) Start(ctx context.Context) error {
 					"history_total":   len(hist),
 					"uptime":          time.Since(s.startTime).Round(time.Second).String(),
 				}})
+				// Periodic cache snapshot (keeps UI in sync when cache changes passively)
+				s.broadcastCacheSnapshot(ctx)
 			}
 		}
 	}()
@@ -255,6 +263,13 @@ func (s *Server) routes() {
 
 	// DNS test resolve
 	api.HandleFunc("/resolve", s.handleResolveTest).Methods("GET")
+
+	// Cache management
+	api.HandleFunc("/cache/flush", s.handleCacheFlush).Methods("POST")
+	api.HandleFunc("/cache/delete", s.handleCacheDelete).Methods("POST")
+	api.HandleFunc("/cache", s.handleCacheList).Methods("GET")
+	api.HandleFunc("/cache/key", s.handleCacheDeleteKey).Methods("DELETE")
+	api.HandleFunc("/cache/key", s.handleCacheGetKey).Methods("GET")
 
 	// Update management
 	api.HandleFunc("/update/check", s.handleUpdateCheck).Methods("GET")
@@ -549,6 +564,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) { //nolint:cyc
 	}
 	// Send hosts snapshot too
 	s.sendJSON(conn, map[string]any{"type": "hosts", "data": s.proxy.GetHosts()})
+	// Send initial cache snapshot (limited)
+	s.broadcastCacheSnapshot(r.Context())
 
 	// Convert rule groups to new format
 	groups := s.proxy.GetRuleGroups()
@@ -863,6 +880,264 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, payload)
+}
+
+// handleCacheFlush clears all DNS cache entries.
+func (s *Server) handleCacheFlush(w http.ResponseWriter, r *http.Request) {
+	// Find cache in the active resolver chain and flush it
+	res := s.proxy.ResolverActive()
+	// Walk decorators to find cache
+	switch v := res.(type) {
+	case *dnsproxy.MetricsResolver:
+		core := v.Next
+		switch c := core.(type) {
+		case *dnsproxy.ServeStaleResolver:
+			if c.Cache != nil {
+				c.Cache.Flush()
+			}
+		case *dnsproxy.CachedResolver:
+			c.Flush()
+		}
+	case *dnsproxy.ServeStaleResolver:
+		if v.Cache != nil {
+			v.Cache.Flush()
+		}
+	case *dnsproxy.CachedResolver:
+		v.Flush()
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, map[string]any{"status": "ok"})
+}
+
+// handleCacheDelete removes cache entries for a specific domain and optional qtype.
+//
+//nolint:cyclop
+func (s *Server) handleCacheDelete(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name  string `json:"name"`
+		QType uint16 `json:"qtype"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		render.Status(r, defaultBadRequestStatus)
+		render.JSON(w, r, map[string]string{"error": err.Error()})
+
+		return
+	}
+
+	if in.Name == "" {
+		render.Status(r, defaultBadRequestStatus)
+		render.JSON(w, r, map[string]string{"error": "name is required"})
+
+		return
+	}
+
+	// Then delete relevant keys if cache is present
+	res := s.proxy.ResolverActive()
+
+	var deleteFn func(string, uint16)
+
+	switch v := res.(type) {
+	case *dnsproxy.MetricsResolver:
+		// Core is inside MetricsResolver.Next
+		core := v.Next
+		switch c := core.(type) {
+		case *dnsproxy.ServeStaleResolver:
+			if c.Cache != nil {
+				deleteFn = c.Cache.Delete
+			}
+		case *dnsproxy.CachedResolver:
+			deleteFn = c.Delete
+		}
+	case *dnsproxy.ServeStaleResolver:
+		if v.Cache != nil {
+			deleteFn = v.Cache.Delete
+		}
+	case *dnsproxy.CachedResolver:
+		deleteFn = v.Delete
+	}
+
+	if deleteFn == nil {
+		// Fallback: rebuild resolver clears expired entries but not targeted; return ok
+		render.Status(r, http.StatusOK)
+		render.JSON(w, r, map[string]any{"status": "noop"})
+
+		return
+	}
+
+	deleteFn(in.Name, in.QType)
+	// broadcast cache snapshot update
+	s.broadcastCacheSnapshot(r.Context())
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, map[string]any{"status": "ok"})
+}
+
+// handleCacheDeleteKey deletes by exact key (?key=name:qtype).
+func (s *Server) handleCacheDeleteKey(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		render.Status(r, defaultBadRequestStatus)
+		render.JSON(w, r, map[string]string{"error": "key is required"})
+
+		return
+	}
+
+	res := s.proxy.ResolverActive()
+	switch v := res.(type) {
+	case *dnsproxy.MetricsResolver:
+		switch core := v.Next.(type) {
+		case *dnsproxy.ServeStaleResolver:
+			if core.Cache != nil {
+				core.Cache.DeleteKey(key)
+			}
+		case *dnsproxy.CachedResolver:
+			core.DeleteKey(key)
+		}
+	case *dnsproxy.ServeStaleResolver:
+		if v.Cache != nil {
+			v.Cache.DeleteKey(key)
+		}
+	case *dnsproxy.CachedResolver:
+		v.DeleteKey(key)
+	}
+
+	s.broadcastCacheSnapshot(r.Context())
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, map[string]any{"status": "ok"})
+}
+
+// handleCacheGetKey returns raw DNS message for a key.
+//
+//nolint:cyclop
+func (s *Server) handleCacheGetKey(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		render.Status(r, defaultBadRequestStatus)
+		render.JSON(w, r, map[string]string{"error": "key is required"})
+
+		return
+	}
+
+	res := s.proxy.ResolverActive()
+
+	var (
+		msg *dns.Msg
+		ok  bool
+	)
+
+	switch v := res.(type) {
+	case *dnsproxy.MetricsResolver:
+		switch core := v.Next.(type) {
+		case *dnsproxy.ServeStaleResolver:
+			if core.Cache != nil {
+				msg, ok = core.Cache.Get(key)
+			}
+		case *dnsproxy.CachedResolver:
+			msg, ok = core.Get(key)
+		}
+	case *dnsproxy.ServeStaleResolver:
+		if v.Cache != nil {
+			msg, ok = v.Cache.Get(key)
+		}
+	case *dnsproxy.CachedResolver:
+		msg, ok = v.Get(key)
+	}
+
+	if !ok || msg == nil {
+		render.Status(r, http.StatusNotFound)
+		render.JSON(w, r, map[string]string{"error": "not found"})
+
+		return
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, map[string]any{"key": key, "answers": rrToStrings(msg.Answer), "rcode": msg.Rcode})
+}
+
+// handleCacheList returns paginated cache entries.
+func (s *Server) handleCacheList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	sortBy := r.URL.Query().Get("sort")
+	order := r.URL.Query().Get("order")
+
+	// Find cache
+	res := s.proxy.ResolverActive()
+
+	var (
+		items any
+		total int
+	)
+
+	switch v := res.(type) {
+	case *dnsproxy.MetricsResolver:
+		switch core := v.Next.(type) {
+		case *dnsproxy.ServeStaleResolver:
+			if core.Cache != nil {
+				it, t := core.Cache.List(offset, limit, q, sortBy, order)
+				items, total = it, t
+			}
+		case *dnsproxy.CachedResolver:
+			it, t := core.List(offset, limit, q, sortBy, order)
+			items, total = it, t
+		}
+	case *dnsproxy.ServeStaleResolver:
+		if v.Cache != nil {
+			it, t := v.Cache.List(offset, limit, q, sortBy, order)
+			items, total = it, t
+		}
+	case *dnsproxy.CachedResolver:
+		it, t := v.List(offset, limit, q, sortBy, order)
+		items, total = it, t
+	}
+
+	if items == nil {
+		items = []any{}
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, map[string]any{"items": items, "total": total, "offset": offset, "limit": limit})
+}
+
+func (s *Server) broadcastCacheSnapshot(_ context.Context) {
+	const (
+		offset = 0
+		limit  = 200
+		q      = ""
+	)
+
+	// Similar lookup as list
+	res := s.proxy.ResolverActive()
+
+	var (
+		items any
+		total int
+	)
+
+	switch v := res.(type) {
+	case *dnsproxy.MetricsResolver:
+		switch core := v.Next.(type) {
+		case *dnsproxy.ServeStaleResolver:
+			if core.Cache != nil {
+				items, total = core.Cache.List(offset, limit, q, "expires", "desc")
+			}
+		case *dnsproxy.CachedResolver:
+			items, total = core.List(offset, limit, q, "expires", "desc")
+		}
+	case *dnsproxy.ServeStaleResolver:
+		if v.Cache != nil {
+			items, total = v.Cache.List(offset, limit, q, "expires", "desc")
+		}
+	case *dnsproxy.CachedResolver:
+		items, total = v.List(offset, limit, q, "expires", "desc")
+	}
+
+	if items == nil {
+		return
+	}
+
+	s.broadcast(map[string]any{"type": "cache", "data": map[string]any{"items": items, "total": total, "offset": offset, "limit": limit}})
 }
 
 // handleResolveTest runs a single DNS resolve through the active pipeline.

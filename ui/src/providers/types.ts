@@ -70,7 +70,7 @@ export interface Config {
 }
 
 // WebSocket message types
-export type WSMessageType = 'stats' | 'history' | 'rule_groups' | 'upstreams' | 'hosts' | 'overview' | 'update_available';
+export type WSMessageType = 'stats' | 'history' | 'rule_groups' | 'upstreams' | 'hosts' | 'overview' | 'update_available' | 'cache' | 'cache_updated';
 
 export interface WSMessage {
   type: WSMessageType;
@@ -103,6 +103,12 @@ export interface Provider {
   fetchServerInfo(): Promise<ServerInfo>;
   // Run a single DNS resolve through active pipeline
   testResolve(name: string, type: string): Promise<ResolveResult>;
+  // Cache listing and events
+  onCache?(cb: (data: CacheListResponse) => void): () => void;
+  onCacheUpdated?(cb: () => void): () => void;
+  fetchCache?(params?: { offset?: number; limit?: number; q?: string; sort?: string; order?: 'asc' | 'desc' }): Promise<CacheListResponse>;
+  cacheFlush?(): Promise<CacheOpResponse>;
+  cacheDelete?(req: CacheDeleteRequest): Promise<CacheOpResponse>;
 }
 
 // API Response types
@@ -162,3 +168,30 @@ export const QTYPE_NAMES: Record<number, string> = {
   16: 'TXT',
   33: 'SRV'
 };
+
+export type CacheDeleteRequest = { name: string } | { name: string; qtype: number | undefined };
+
+export interface CacheOpResponse {
+  status: string;
+}
+
+export interface CacheEntry {
+  key: string;
+  name: string;
+  qtype: number;
+  answers: number;
+  expires_at: string | Date;
+}
+
+export interface CacheListResponse {
+  items: CacheEntry[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface CacheKeyDetails {
+  key: string;
+  answers: string[];
+  rcode: number;
+}

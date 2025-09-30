@@ -1,4 +1,4 @@
-import { Provider, RuleGroup, Stats, QueryEvent, ServerInfo, HostOverride, ResolveResult, UpstreamItem, OverviewData } from './types.js';
+import { Provider, RuleGroup, Stats, QueryEvent, ServerInfo, HostOverride, ResolveResult, UpstreamItem, OverviewData, CacheDeleteRequest, CacheOpResponse, CacheListResponse } from './types.js';
 import { WSProvider } from './wsProvider.js';
 import { RESTProvider } from './restProvider.js';
 
@@ -125,6 +125,7 @@ export class FailoverProvider implements Provider {
         case 'hosts': this.wsUnsubs.set(topic, this.wsProvider.onHosts(multiCb)); break;
         case 'overview': this.wsUnsubs.set(topic, this.wsProvider.onOverview(multiCb)); break;
         case 'update_available': this.wsUnsubs.set(topic, this.wsProvider.onUpdateAvailable(multiCb)); break;
+        case 'cache': this.wsUnsubs.set(topic, (this.wsProvider as any).onCache(multiCb)); break;
       }
     } else {
       switch (topic) {
@@ -135,6 +136,7 @@ export class FailoverProvider implements Provider {
         case 'hosts': this.restUnsubs.set(topic, this.restProvider.onHosts(multiCb)); break;
         case 'overview': this.restUnsubs.set(topic, this.restProvider.onOverview(multiCb)); break;
         case 'update_available': this.restUnsubs.set(topic, this.restProvider.onUpdateAvailable(multiCb)); break;
+        case 'cache': this.restUnsubs.set(topic, (this.restProvider as any).onCache(multiCb)); break;
       }
     }
   }
@@ -178,6 +180,13 @@ export class FailoverProvider implements Provider {
   onHosts(cb: (hosts: HostOverride[]) => void): () => void { return this.addListener('hosts', cb); }
   onOverview(cb: (ov: OverviewData) => void): () => void { return this.addListener('overview', cb); }
   onUpdateAvailable(cb: (updateInfo: any) => void): () => void { return this.addListener('update_available', cb); }
+
+  // Cache listing with failover (prefer WS snapshots with REST refresh)
+  onCache(cb: (data: CacheListResponse) => void): () => void { return this.addListener('cache', cb); }
+  onCacheUpdated(cb: () => void): () => void { return this.addListener('cache_updated', cb as any); }
+  async fetchCache(params?: { offset?: number; limit?: number; q?: string; sort?: string; order?: 'asc' | 'desc' }): Promise<CacheListResponse> {
+    return (this.restProvider as any).fetchCache(params);
+  }
 
   // All mutations go through REST (optimistic updates handled by store)
   async fetchRuleGroups(): Promise<RuleGroup[]> {
@@ -300,5 +309,14 @@ export class FailoverProvider implements Provider {
       console.error('Failed to run resolve test:', error);
       throw error;
     }
+  }
+
+  // Cache admin
+  async cacheFlush(): Promise<CacheOpResponse> {
+    return this.restProvider.cacheFlush();
+  }
+
+  async cacheDelete(req: CacheDeleteRequest): Promise<CacheOpResponse> {
+    return this.restProvider.cacheDelete(req);
   }
 }

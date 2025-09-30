@@ -7,6 +7,7 @@ import { Upstreams } from '../pages/Upstreams.js';
 import { History } from '../pages/History.js';
 import { Hosts } from '../pages/Hosts.js';
 import Update from '../pages/Update.js';
+import CachePage from '../pages/Cache.js';
 import { Sidebar } from '../components/Sidebar.js';
 import { Header } from '../components/Header.js';
 import { useTheme } from '../hooks/useTheme.js';
@@ -35,7 +36,7 @@ export function App() {
     // Handle hash changes for routing
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
-      const validTabs = ['overview', 'rules', 'upstreams', 'history', 'hosts', 'resolve', 'update'];
+      const validTabs = ['overview', 'rules', 'upstreams', 'history', 'hosts', 'resolve', 'cache', 'update'];
       if (validTabs.includes(hash)) {
         setActiveTab(hash);
       }
@@ -92,6 +93,10 @@ export function App() {
       // If already on the same hash, manually sync state
       setActiveTab(tabId);
     }
+    // On mobile, hide the sidebar after selecting a menu item
+    if (window.innerWidth < 1024) {
+      setSidebarCollapsed(true);
+    }
     window.scrollTo(0, 0);
   };
 
@@ -141,6 +146,7 @@ export function App() {
             {activeTab === 'history' && <History provider={provider} />}
             {activeTab === 'hosts' && <Hosts provider={provider} />}
             {activeTab === 'resolve' && <Resolve provider={provider} />}
+            {activeTab === 'cache' && <CachePage provider={provider} />}
             {activeTab === 'update' && <Update provider={provider} />}
           </div>
         </main>

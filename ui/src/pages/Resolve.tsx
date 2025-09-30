@@ -14,13 +14,35 @@ export function Resolve({ provider }: ResolveProps) {
   const [result, setResult] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const extractDomain = (raw: string): string => {
+    let v = (raw || '').trim();
+    if (!v) return v;
+    // Strip optional leading marker like '@'
+    if (v.startsWith('@')) v = v.slice(1);
+    // Try URL parsing first
+    try {
+      const u = new URL(v);
+      return u.hostname || v;
+    } catch {}
+    // If missing scheme, try with http:// prefix
+    try {
+      const u2 = new URL(/^https?:\/\//i.test(v) ? v : `http://${v}`);
+      return u2.hostname || v;
+    } catch {}
+    // Fallback: strip protocol-like prefix and trailing slash
+    v = v.replace(/^\w+:\/\//, '');
+    v = v.replace(/\/.*$/, '');
+    return v;
+  };
+
   const submit = async (e: Event) => {
     e.preventDefault();
     if (!name.trim()) return;
     setLoading(true);
     setResult('');
     try {
-      const res = await provider.testResolve(name.trim(), type);
+      const domain = extractDomain(name);
+      const res = await provider.testResolve(domain, type);
       const headerParts = [
         `Upstream: ${res.upstream}`,
         `RCODE: ${res.rcode}`,
@@ -59,7 +81,7 @@ export function Resolve({ provider }: ResolveProps) {
               label="Domain"
               value={name}
               onInput={(e) => setName((e.target as HTMLInputElement).value)}
-              placeholder="example.com"
+              placeholder="example.com or https://www.example.com"
               required
             />
 
@@ -87,6 +109,8 @@ export function Resolve({ provider }: ResolveProps) {
               </Button>
             </div>
           </div>
+
+          {/* Cache controls moved to dedicated Cache page */}
 
           {result && (
             <div>

@@ -2,6 +2,7 @@ package dnsproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -349,7 +350,8 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 	}
 }
 
-func (p *Proxy) exchangeDoH(ctx context.Context, msg *dns.Msg, url string) (*dns.Msg, time.Duration, error) { //nolint:cyclop,funcorder
+//nolint:cyclop,funcorder,gocognit,funlen
+func (p *Proxy) exchangeDoH(ctx context.Context, msg *dns.Msg, url string) (*dns.Msg, time.Duration, error) {
 	if msg == nil {
 		return nil, 0, errNilDNSMessageForDoH
 	}
@@ -385,7 +387,52 @@ func (p *Proxy) exchangeDoH(ctx context.Context, msg *dns.Msg, url string) (*dns
 	start := time.Now()
 
 	resp, err := p.dohClient.Do(req)
+	//nolint:nestif
 	if err != nil {
+		// Fallback: if domain resolution for DoH endpoint fails, try a pinned resolver IP via Host header
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) || strings.Contains(err.Error(), "no such host") {
+			// Try common providers
+			fallback := []struct{ host, ip string }{
+				{"cloudflare-dns.com", "1.1.1.1"},
+				{"cloudflare-dns.com", "1.0.0.1"},
+				{"dns.google", "8.8.8.8"},
+				{"dns.google", "8.8.4.4"},
+				{"doh.opendns.com", "208.67.222.222"},
+			}
+			for _, fb := range fallback {
+				if !strings.Contains(url, fb.host) {
+					continue
+				}
+				// Rebuild request to fixed IP with SNI/Host preserved
+				ipURL := strings.Replace(url, fb.host, fb.ip, 1)
+
+				req2, err2 := http.NewRequestWithContext(ctx, http.MethodGet, ipURL, nil)
+				if err2 != nil {
+					continue
+				}
+
+				req2.Host = fb.host
+				req2.Header.Set("Accept", "application/dns-message")
+				// TLS transport with SNI
+				tr := &http.Transport{TLSClientConfig: &tls.Config{ServerName: fb.host, MinVersion: tls.VersionTLS13}}
+
+				cli := &http.Client{Timeout: defaultDoHTimeout, Transport: tr}
+				if resp2, err2 := cli.Do(req2); err2 == nil && resp2 != nil {
+					defer func() { _ = resp2.Body.Close() }()
+
+					if resp2.StatusCode == http.StatusOK {
+						body, _ := io.ReadAll(resp2.Body)
+
+						out := &dns.Msg{}
+						if err := out.Unpack(body); err == nil {
+							return out, time.Since(start), nil
+						}
+					}
+				}
+			}
+		}
+
 		return nil, 0, fmt.Errorf("DoH request failed: %w", err)
 	}
 
