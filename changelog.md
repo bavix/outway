@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.0 - 2025-09-30
+
+### What's Changed
+
+* Implement cache management features in DNS proxy by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/30
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.0.11...v1.1.0
+
 ## v1.0.11 - 2025-09-29
 
 ### What's Changed
