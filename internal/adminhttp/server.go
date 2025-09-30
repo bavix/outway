@@ -184,13 +184,13 @@ func (s *Server) Start(ctx context.Context) error {
 
 	_ = ln.Close()
 
-    // Hook cache change notifier to push invalidation events to UI
-    dnsproxy.SetCacheChangeNotifier(func() {
-        // Send lightweight invalidation; client will refetch current page
-        s.broadcast(map[string]any{"type": "cache_updated", "data": true})
-    })
+	// Hook cache change notifier to push invalidation events to UI
+	dnsproxy.SetCacheChangeNotifier(func() {
+		// Send lightweight invalidation; client will refetch current page
+		s.broadcast(map[string]any{"type": "cache_updated", "data": true})
+	})
 
-    // Build middleware chain
+	// Build middleware chain
 	handler := s.buildMiddlewareChain(ctx)
 
 	// Create server with middleware and graceful shutdown
@@ -233,8 +233,7 @@ func (s *Server) Start(ctx context.Context) error {
 					"uptime":          time.Since(s.startTime).Round(time.Second).String(),
 				}})
 				// Periodic cache snapshot (keeps UI in sync when cache changes passively)
-				const defaultCacheSnapshotLimit = 200
-				s.broadcastCacheSnapshot(ctx, 0, defaultCacheSnapshotLimit, "")
+				s.broadcastCacheSnapshot(ctx)
 			}
 		}
 	}()
@@ -566,8 +565,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) { //nolint:cyc
 	// Send hosts snapshot too
 	s.sendJSON(conn, map[string]any{"type": "hosts", "data": s.proxy.GetHosts()})
 	// Send initial cache snapshot (limited)
-	const defaultCacheSnapshotLimit = 200
-	s.broadcastCacheSnapshot(r.Context(), 0, defaultCacheSnapshotLimit, "")
+	s.broadcastCacheSnapshot(r.Context())
 
 	// Convert rule groups to new format
 	groups := s.proxy.GetRuleGroups()
@@ -913,6 +911,8 @@ func (s *Server) handleCacheFlush(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCacheDelete removes cache entries for a specific domain and optional qtype.
+//
+//nolint:cyclop
 func (s *Server) handleCacheDelete(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Name  string `json:"name"`
@@ -967,8 +967,7 @@ func (s *Server) handleCacheDelete(w http.ResponseWriter, r *http.Request) {
 
 	deleteFn(in.Name, in.QType)
 	// broadcast cache snapshot update
-	const defaultCacheSnapshotLimit = 200
-	s.broadcastCacheSnapshot(r.Context(), 0, defaultCacheSnapshotLimit, "")
+	s.broadcastCacheSnapshot(r.Context())
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, map[string]any{"status": "ok"})
 }
@@ -1002,13 +1001,14 @@ func (s *Server) handleCacheDeleteKey(w http.ResponseWriter, r *http.Request) {
 		v.DeleteKey(key)
 	}
 
-	const defaultCacheSnapshotLimit = 200
-	s.broadcastCacheSnapshot(r.Context(), 0, defaultCacheSnapshotLimit, "")
+	s.broadcastCacheSnapshot(r.Context())
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, map[string]any{"status": "ok"})
 }
 
 // handleCacheGetKey returns raw DNS message for a key.
+//
+//nolint:cyclop
 func (s *Server) handleCacheGetKey(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Query().Get("key")
 	if key == "" {
@@ -1100,7 +1100,13 @@ func (s *Server) handleCacheList(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, map[string]any{"items": items, "total": total, "offset": offset, "limit": limit})
 }
 
-func (s *Server) broadcastCacheSnapshot(_ context.Context, offset, limit int, q string) {
+func (s *Server) broadcastCacheSnapshot(_ context.Context) {
+	const (
+		offset = 0
+		limit  = 200
+		q      = ""
+	)
+
 	// Similar lookup as list
 	res := s.proxy.ResolverActive()
 

@@ -18,6 +18,8 @@ type cacheItem struct {
 }
 
 // cacheChangeNotify is an optional hook set by adminhttp to broadcast cache changes.
+//
+//nolint:gochecknoglobals
 var cacheChangeNotify func()
 
 // SetCacheChangeNotifier sets a global hook invoked on cache mutations/evictions.
@@ -125,10 +127,10 @@ func (c *CachedResolver) put(key string, msg *dns.Msg) {
 	ttl = uint32(t) //nolint:gosec // TTL bounds validated in config
 	it := cacheItem{msg: msg.Copy(), expire: time.Now().Add(time.Duration(ttl) * time.Second)}
 	c.lru.Add(key, it)
-    if cacheChangeNotify != nil {
-        cacheChangeNotify()
-    }
 
+	if cacheChangeNotify != nil {
+		cacheChangeNotify()
+	}
 }
 
 func ttlFromMsg(msg *dns.Msg) uint32 {
@@ -155,10 +157,11 @@ func (c *CachedResolver) Flush() {
 		return
 	}
 
-    c.lru.Purge()
-    if cacheChangeNotify != nil {
-        cacheChangeNotify()
-    }
+	c.lru.Purge()
+
+	if cacheChangeNotify != nil {
+		cacheChangeNotify()
+	}
 }
 
 // Delete removes cache entries for a specific name and qtype.
@@ -175,8 +178,11 @@ func (c *CachedResolver) Delete(name string, qtype uint16) {
 
 	if qtype != 0 {
 		key := name + ":" + strconv.FormatUint(uint64(qtype), 10)
-        c.lru.Remove(key)
-        if cacheChangeNotify != nil { cacheChangeNotify() }
+		c.lru.Remove(key)
+
+		if cacheChangeNotify != nil {
+			cacheChangeNotify()
+		}
 
 		return
 	}
@@ -187,8 +193,11 @@ func (c *CachedResolver) Delete(name string, qtype uint16) {
 	}
 	for _, t := range common {
 		key := name + ":" + strconv.FormatUint(uint64(t), 10)
-        c.lru.Remove(key)
-        if cacheChangeNotify != nil { cacheChangeNotify() }
+		c.lru.Remove(key)
+
+		if cacheChangeNotify != nil {
+			cacheChangeNotify()
+		}
 	}
 }
 
@@ -205,7 +214,7 @@ type cacheEntry struct {
 // List returns a paginated list of non-expired cache entries filtered by substring q.
 // sortBy: name|expires|qtype|answers, order: asc|desc.
 //
-//nolint:gocognit // sorting and pagination branching kept explicit for clarity
+//nolint:gocognit,cyclop,funlen,nonamedreturns // sorting and pagination branching kept explicit for clarity
 func (c *CachedResolver) List(offset, limit int, q string, sortBy, order string) (items []cacheEntry, total int) {
 	if c == nil {
 		return nil, 0
