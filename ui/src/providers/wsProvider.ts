@@ -7,7 +7,8 @@ import {
   WSMessageType,
   HostOverride,
   UpstreamItem,
-  OverviewData
+  OverviewData,
+  CacheListResponse
 } from './types.js';
 
 export class WSProvider implements Provider {
@@ -111,6 +112,15 @@ export class WSProvider implements Provider {
     if (message.type === 'overview' && payload) {
       try { (window as any).__ov = payload; } catch {}
     }
+    if (message.type === 'cache_updated') {
+      // Invalidate; consumers listening on 'cache' should proactively refresh via REST
+      const callbacks = this.callbacks.get('cache');
+      if (callbacks) {
+        callbacks.forEach(cb => {
+          try { cb({ items: this.lastSnapshot['cache']?.items || [], total: this.lastSnapshot['cache']?.total || 0, offset: this.lastSnapshot['cache']?.offset || 0, limit: this.lastSnapshot['cache']?.limit || 0 }); } catch {}
+        });
+      }
+    }
 
     // Update last snapshot
     this.lastSnapshot[message.type] = payload;
@@ -179,6 +189,15 @@ export class WSProvider implements Provider {
   // Overview
   onOverview(cb: (ov: OverviewData) => void): () => void {
     return this.subscribe('overview' as WSMessageType, cb);
+  }
+
+  // Cache listing snapshot
+  onCache(cb: (data: CacheListResponse) => void): () => void {
+    return this.subscribe('cache' as WSMessageType, cb);
+  }
+
+  onCacheUpdated(cb: () => void): () => void {
+    return this.subscribe('cache_updated' as WSMessageType, cb as any);
   }
 
   // Updates

@@ -10,7 +10,11 @@ import {
   HostOverride,
   ResolveResult,
   UpstreamItem,
-  OverviewData 
+  OverviewData,
+  CacheDeleteRequest,
+  CacheOpResponse,
+  CacheListResponse,
+  CacheKeyDetails
 } from './types.js';
 
 export class RESTProvider implements Provider {
@@ -21,7 +25,8 @@ export class RESTProvider implements Provider {
     history: 60000,    // 1m
     rule_groups: 300000,     // 5m
     upstreams: 300000,  // 5m
-    hosts: 300000
+    hosts: 300000,
+    cache: 30000
   };
 
   constructor(private baseUrl: string = '') {}
@@ -33,6 +38,7 @@ export class RESTProvider implements Provider {
     this.startPolling('rule_groups', () => this.fetchRuleGroups());
     this.startPolling('upstreams', () => this.fetchUpstreams());
     this.startPolling('hosts', () => this.fetchHosts());
+    this.startPolling('cache', () => this.fetchCache());
   }
 
   close(): void {
@@ -113,6 +119,10 @@ export class RESTProvider implements Provider {
 
   onHosts(cb: (hosts: HostOverride[]) => void): () => void {
     return this.subscribe('hosts', cb);
+  }
+
+  onCache(cb: (entries: CacheListResponse) => void): () => void {
+    return this.subscribe('cache', cb);
   }
 
   onUpdateAvailable(_cb: (updateInfo: any) => void): () => void {
@@ -247,11 +257,34 @@ export class RESTProvider implements Provider {
     return this.fetchJSON<ResolveResult>(`/api/v1/resolve?${params.toString()}`);
   }
 
+  // Cache admin
+  async cacheFlush(): Promise<CacheOpResponse> {
+    return this.fetchJSON<CacheOpResponse>('/api/v1/cache/flush', { method: 'POST' });
+  }
+
+  async cacheDelete(req: CacheDeleteRequest): Promise<CacheOpResponse> {
+    return this.fetchJSON<CacheOpResponse>('/api/v1/cache/delete', { method: 'POST', body: JSON.stringify(req) });
+  }
+
   // Overview (REST)
   onOverview(cb: (ov: OverviewData) => void): () => void {
     return this.subscribe('overview', cb);
   }
   async fetchOverview(): Promise<OverviewData> {
     return this.fetchJSON<OverviewData>('/api/v1/overview');
+  }
+
+  async fetchCache(params?: { offset?: number; limit?: number; q?: string }): Promise<CacheListResponse> {
+    const p = new URLSearchParams();
+    if (params?.offset) p.set('offset', String(params.offset));
+    if (params?.limit) p.set('limit', String(params.limit));
+    if (params?.q) p.set('q', params.q);
+    const qs = p.toString();
+    return this.fetchJSON<CacheListResponse>(`/api/v1/cache${qs ? `?${qs}` : ''}`);
+  }
+
+  async fetchCacheKey(key: string): Promise<CacheKeyDetails> {
+    const p = new URLSearchParams({ key });
+    return this.fetchJSON<CacheKeyDetails>(`/api/v1/cache/key?${p.toString()}`);
   }
 }

@@ -33,8 +33,12 @@ func (u *UpstreamResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, s
 		return nil, u.network + ":" + u.address, errInvalidUpstreamClientOrQuery
 	}
 
-	out, _, err := u.client.Exchange(q, u.address)
-	if err != nil || out == nil {
+    out, _, err := u.client.Exchange(q, u.address)
+    // If UDP response is truncated, treat as error to allow next strategy (e.g., TCP) to retry
+    if err == nil && out != nil && out.Truncated {
+        err = errors.New("truncated")
+    }
+    if err != nil || out == nil {
 		zerolog.Ctx(ctx).Err(err).Str("net", u.network).Str("upstream", u.address).Msg("dns upstream error")
 	}
 
