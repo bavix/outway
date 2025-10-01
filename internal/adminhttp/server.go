@@ -277,6 +277,12 @@ func (s *Server) routes() {
 	api.HandleFunc("/update/install", s.handleUpdateInstall).Methods("POST")
 	api.HandleFunc("/update/status", s.handleUpdateStatus).Methods("GET")
 
+	// Local DNS / LAN resolver
+	api.HandleFunc("/local/zones", s.handleLocalZones).Methods("GET")
+	api.HandleFunc("/local/leases", s.handleLocalLeases).Methods("GET")
+	api.HandleFunc("/local/resolve", s.handleLocalResolve).Methods("GET")
+	api.HandleFunc("/local/watch", s.handleLocalWatch).Methods("GET")
+
 	// Health check
 	s.mux.HandleFunc("/health", s.handleHealth).Methods("GET")
 

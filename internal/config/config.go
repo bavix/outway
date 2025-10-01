@@ -198,6 +198,15 @@ type UpdateConfig struct {
 	IncludePrerelease bool `json:"include_prerelease" yaml:"include_prerelease,omitempty"`
 }
 
+// LocalZonesConfig defines local DNS resolution from DHCP leases.
+type LocalZonesConfig struct {
+	Enabled    bool     `yaml:"enabled,omitempty"`
+	LocalZones []string `yaml:"local_zones,omitempty"` // Explicit zone override
+	UCIPath    string   `yaml:"uci_path,omitempty"`    // Path to /etc/config/dhcp
+	ResolvPath string   `yaml:"resolv_path,omitempty"` // Path to /tmp/resolv.conf.auto
+	LeasesPath string   `yaml:"leases_path,omitempty"` // Path to /tmp/dhcp.leases
+}
+
 // Config is the main application configuration.
 type Config struct {
 	AppName    string           `yaml:"app_name,omitempty"`
@@ -210,6 +219,7 @@ type Config struct {
 	HTTP       HTTPConfig       `yaml:"http,omitempty"`
 	Hosts      []HostOverride   `yaml:"hosts,omitempty"`
 	Update     UpdateConfig     `yaml:"update,omitempty"`
+	LocalZones LocalZonesConfig `yaml:"local_zones,omitempty"`
 	Path       string           `yaml:"-"`
 }
 
