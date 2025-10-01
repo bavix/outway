@@ -85,10 +85,8 @@ func (w *Watcher) run(ctx context.Context) {
 			if !ok {
 				return
 			}
-			// Log error but continue
+
 			if err != nil {
-				// In a real implementation, you'd use proper logging
-				// For now, we'll just continue
 				_ = err // Suppress unused variable warning
 			}
 

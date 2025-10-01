@@ -265,12 +265,10 @@ func (s *Server) routes() {
 
 	// Load initial leases (always enabled)
 	if err := leaseManager.LoadLeases(); err != nil {
-		// Log warning but continue
 		zerolog.Ctx(context.Background()).Warn().Err(err).Msg("Failed to load initial DHCP leases")
 	}
 
-	// Create LAN resolver (we'll need to get this from the proxy somehow)
-	// For now, we'll create a temporary one for the handler
+	// Create LAN resolver
 	lanResolver := lanresolver.NewLANResolver(nil, zoneDetector, leaseManager)
 
 	// Create local handler first

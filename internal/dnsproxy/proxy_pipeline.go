@@ -61,8 +61,6 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 
 	// Load initial leases
 	if err := leaseManager.LoadLeases(); err != nil {
-		// Log warning but continue
-		// In a real implementation, you'd use proper logging
 		_ = err // Suppress unused variable warning
 	}
 

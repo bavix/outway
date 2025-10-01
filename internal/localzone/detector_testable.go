@@ -40,7 +40,7 @@ func (zd *TestableZoneDetector) DetectZones() ([]string, error) { //nolint:cyclo
 	if zd.config.DetectFromUCI {
 		uciZones, err := zd.detectFromUCI()
 		if err != nil {
-			// Log warning but continue
+			// Continue with other detection methods
 		} else if len(uciZones) > 0 {
 			zones = append(zones, uciZones...)
 		}
@@ -50,7 +50,7 @@ func (zd *TestableZoneDetector) DetectZones() ([]string, error) { //nolint:cyclo
 	if zd.config.DetectFromResolv {
 		resolvZones, err := zd.detectFromResolvConf()
 		if err != nil {
-			// Log warning but continue
+			// Continue with other detection methods
 		} else if len(resolvZones) > 0 {
 			zones = append(zones, resolvZones...)
 		}
@@ -78,8 +78,6 @@ func (zd *TestableZoneDetector) DetectZones() ([]string, error) { //nolint:cyclo
 	}
 
 	// If still no zones, return empty array (no fallback)
-	// This allows the system to work without any local zones
-
 	// Remove duplicates and return
 	result := zd.removeDuplicates(zones)
 	if result == nil {

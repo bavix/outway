@@ -83,7 +83,7 @@ func (zd *ZoneDetector) DetectZones() ([]string, error) { //nolint:cyclop
 	if zd.DetectFromUCI {
 		uciZones, err := zd.detectFromUCI()
 		if err != nil {
-			// Log warning but continue
+			// Continue with other detection methods
 		} else if len(uciZones) > 0 {
 			zones = append(zones, uciZones...)
 		}
@@ -93,7 +93,7 @@ func (zd *ZoneDetector) DetectZones() ([]string, error) { //nolint:cyclop
 	if zd.DetectFromResolv {
 		resolvZones, err := zd.detectFromResolvConf()
 		if err != nil {
-			// Log warning but continue
+			// Continue with other detection methods
 		} else if len(resolvZones) > 0 {
 			zones = append(zones, resolvZones...)
 		}
@@ -103,7 +103,7 @@ func (zd *ZoneDetector) DetectZones() ([]string, error) { //nolint:cyclop
 	if zd.DetectFromSystemd && len(zones) == 0 {
 		systemdZones, err := zd.detectFromSystemd()
 		if err != nil {
-			// Log warning but continue
+			// Continue with other detection methods
 		} else if len(systemdZones) > 0 {
 			zones = append(zones, systemdZones...)
 		}
@@ -113,7 +113,7 @@ func (zd *ZoneDetector) DetectZones() ([]string, error) { //nolint:cyclop
 	if zd.DetectFromMDNS && len(zones) == 0 {
 		mdnsZones, err := zd.detectFromMDNS()
 		if err != nil {
-			// Log warning but continue
+			// Continue with other detection methods
 		} else if len(mdnsZones) > 0 {
 			zones = append(zones, mdnsZones...)
 		}

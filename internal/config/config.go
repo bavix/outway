@@ -427,8 +427,6 @@ func Load(path string) (*Config, error) { //nolint:cyclop,funlen
 		cfg.HTTP.Enabled = true
 	}
 
-	// Local DNS is now fully auto-detected - no configuration needed
-
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
