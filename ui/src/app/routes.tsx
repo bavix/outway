@@ -6,6 +6,7 @@ import { Rules } from '../pages/Rules.js';
 import { Upstreams } from '../pages/Upstreams.js';
 import { History } from '../pages/History.js';
 import { Hosts } from '../pages/Hosts.js';
+import { LocalDNS } from '../pages/LocalDNS.js';
 import Update from '../pages/Update.js';
 import CachePage from '../pages/Cache.js';
 import { Sidebar } from '../components/Sidebar.js';
@@ -36,7 +37,7 @@ export function App() {
     // Handle hash changes for routing
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
-      const validTabs = ['overview', 'rules', 'upstreams', 'history', 'hosts', 'resolve', 'cache', 'update'];
+      const validTabs = ['overview', 'rules', 'upstreams', 'history', 'hosts', 'local-dns', 'resolve', 'cache', 'update'];
       if (validTabs.includes(hash)) {
         setActiveTab(hash);
       }
@@ -145,6 +146,7 @@ export function App() {
             {activeTab === 'upstreams' && <Upstreams provider={provider} />}
             {activeTab === 'history' && <History provider={provider} />}
             {activeTab === 'hosts' && <Hosts provider={provider} />}
+            {activeTab === 'local-dns' && <LocalDNS provider={provider} />}
             {activeTab === 'resolve' && <Resolve provider={provider} />}
             {activeTab === 'cache' && <CachePage provider={provider} />}
             {activeTab === 'update' && <Update provider={provider} />}

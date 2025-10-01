@@ -14,7 +14,9 @@ import {
   CacheDeleteRequest,
   CacheOpResponse,
   CacheListResponse,
-  CacheKeyDetails
+  CacheKeyDetails,
+  LocalZonesData,
+  Lease
 } from './types.js';
 
 export class RESTProvider implements Provider {
@@ -26,7 +28,8 @@ export class RESTProvider implements Provider {
     rule_groups: 300000,     // 5m
     upstreams: 300000,  // 5m
     hosts: 300000,
-    cache: 30000
+    cache: 30000,
+    local_zones: 60000  // 1m
   };
 
   constructor(private baseUrl: string = '') {}
@@ -39,6 +42,13 @@ export class RESTProvider implements Provider {
     this.startPolling('upstreams', () => this.fetchUpstreams());
     this.startPolling('hosts', () => this.fetchHosts());
     this.startPolling('cache', () => this.fetchCache());
+    this.startPolling('local_zones', async () => {
+      const [zones, leases] = await Promise.all([
+        this.fetchLocalZones(),
+        this.fetchLocalLeases()
+      ]);
+      return { zones: zones.zones || [], leases: leases.leases || [] };
+    });
   }
 
   close(): void {
@@ -286,5 +296,23 @@ export class RESTProvider implements Provider {
   async fetchCacheKey(key: string): Promise<CacheKeyDetails> {
     const p = new URLSearchParams({ key });
     return this.fetchJSON<CacheKeyDetails>(`/api/v1/cache/key?${p.toString()}`);
+  }
+
+  // Local DNS / LAN resolver
+  onLocalZones(cb: (data: LocalZonesData) => void): () => void {
+    return this.subscribe('local_zones', cb);
+  }
+
+  async fetchLocalZones(): Promise<{ zones: string[] }> {
+    return this.fetchJSON<{ zones: string[] }>('/api/v1/local/zones');
+  }
+
+  async fetchLocalLeases(): Promise<{ leases: Lease[] }> {
+    return this.fetchJSON<{ leases: Lease[] }>('/api/v1/local/leases');
+  }
+
+  async resolveLocal(name: string): Promise<ResolveResult> {
+    const params = new URLSearchParams({ name });
+    return this.fetchJSON<ResolveResult>(`/api/v1/local/resolve?${params.toString()}`);
   }
 }

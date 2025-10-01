@@ -46,6 +46,19 @@ export interface HostOverride {
   ttl?: number;
 }
 
+export interface Lease {
+  hostname: string;
+  ip: string;
+  mac: string;
+  expires_at: string;
+  id?: string;
+}
+
+export interface LocalZonesData {
+  zones: string[];
+  leases: Lease[];
+}
+
 export interface ServerInfo {
   version: string;
   go_version: string;
@@ -70,7 +83,7 @@ export interface Config {
 }
 
 // WebSocket message types
-export type WSMessageType = 'stats' | 'history' | 'rule_groups' | 'upstreams' | 'hosts' | 'overview' | 'update_available' | 'cache' | 'cache_updated';
+export type WSMessageType = 'stats' | 'history' | 'rule_groups' | 'upstreams' | 'hosts' | 'overview' | 'update_available' | 'cache' | 'cache_updated' | 'local_zones';
 
 export interface WSMessage {
   type: WSMessageType;
@@ -109,6 +122,11 @@ export interface Provider {
   fetchCache?(params?: { offset?: number; limit?: number; q?: string; sort?: string; order?: 'asc' | 'desc' }): Promise<CacheListResponse>;
   cacheFlush?(): Promise<CacheOpResponse>;
   cacheDelete?(req: CacheDeleteRequest): Promise<CacheOpResponse>;
+  // Local DNS (LAN resolver)
+  onLocalZones?(cb: (data: LocalZonesData) => void): () => void;
+  fetchLocalZones?(): Promise<{ zones: string[] }>;
+  fetchLocalLeases?(): Promise<{ leases: Lease[] }>;
+  resolveLocal?(name: string): Promise<ResolveResult>;
 }
 
 // API Response types

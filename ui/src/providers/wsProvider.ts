@@ -8,7 +8,8 @@ import {
   HostOverride,
   UpstreamItem,
   OverviewData,
-  CacheListResponse
+  CacheListResponse,
+  LocalZonesData
 } from './types.js';
 
 export class WSProvider implements Provider {
@@ -198,6 +199,11 @@ export class WSProvider implements Provider {
 
   onCacheUpdated(cb: () => void): () => void {
     return this.subscribe('cache_updated' as WSMessageType, cb as any);
+  }
+
+  // Local DNS zones
+  onLocalZones(cb: (data: LocalZonesData) => void): () => void {
+    return this.subscribe('local_zones' as WSMessageType, cb);
   }
 
   // Updates

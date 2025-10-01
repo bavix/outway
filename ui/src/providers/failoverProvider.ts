@@ -1,4 +1,4 @@
-import { Provider, RuleGroup, Stats, QueryEvent, ServerInfo, HostOverride, ResolveResult, UpstreamItem, OverviewData, CacheDeleteRequest, CacheOpResponse, CacheListResponse } from './types.js';
+import { Provider, RuleGroup, Stats, QueryEvent, ServerInfo, HostOverride, ResolveResult, UpstreamItem, OverviewData, CacheDeleteRequest, CacheOpResponse, CacheListResponse, LocalZonesData, Lease } from './types.js';
 import { WSProvider } from './wsProvider.js';
 import { RESTProvider } from './restProvider.js';
 
@@ -126,6 +126,7 @@ export class FailoverProvider implements Provider {
         case 'overview': this.wsUnsubs.set(topic, this.wsProvider.onOverview(multiCb)); break;
         case 'update_available': this.wsUnsubs.set(topic, this.wsProvider.onUpdateAvailable(multiCb)); break;
         case 'cache': this.wsUnsubs.set(topic, (this.wsProvider as any).onCache(multiCb)); break;
+        case 'local_zones': this.wsUnsubs.set(topic, (this.wsProvider as any).onLocalZones(multiCb)); break;
       }
     } else {
       switch (topic) {
@@ -137,6 +138,7 @@ export class FailoverProvider implements Provider {
         case 'overview': this.restUnsubs.set(topic, this.restProvider.onOverview(multiCb)); break;
         case 'update_available': this.restUnsubs.set(topic, this.restProvider.onUpdateAvailable(multiCb)); break;
         case 'cache': this.restUnsubs.set(topic, (this.restProvider as any).onCache(multiCb)); break;
+        case 'local_zones': this.restUnsubs.set(topic, (this.restProvider as any).onLocalZones(multiCb)); break;
       }
     }
   }
@@ -318,5 +320,22 @@ export class FailoverProvider implements Provider {
 
   async cacheDelete(req: CacheDeleteRequest): Promise<CacheOpResponse> {
     return this.restProvider.cacheDelete(req);
+  }
+
+  // Local DNS / LAN resolver
+  onLocalZones(cb: (data: LocalZonesData) => void): () => void { 
+    return this.addListener('local_zones', cb); 
+  }
+
+  async fetchLocalZones(): Promise<{ zones: string[] }> {
+    return this.restProvider.fetchLocalZones?.() || Promise.resolve({ zones: [] });
+  }
+
+  async fetchLocalLeases(): Promise<{ leases: Lease[] }> {
+    return this.restProvider.fetchLocalLeases?.() || Promise.resolve({ leases: [] });
+  }
+
+  async resolveLocal(name: string): Promise<ResolveResult> {
+    return this.restProvider.resolveLocal?.(name) || Promise.reject(new Error('Local DNS not available'));
   }
 }
