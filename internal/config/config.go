@@ -55,7 +55,13 @@ func detectType(addr string) string {
 
 	u, err := url.Parse(a)
 	if err != nil || u.Scheme == "" {
-		return ""
+		// No URL scheme detected - check for special cases
+		// If it's a valid host:port, default to UDP (like configDetectType in proxy.go)
+		if _, port, err := net.SplitHostPort(a); err == nil && port == "853" {
+			return "dot"
+		}
+		// Default to UDP for plain addresses like 1.1.1.1:53
+		return "udp"
 	}
 
 	switch strings.ToLower(u.Scheme) {
@@ -70,7 +76,7 @@ func detectType(addr string) string {
 	case "quic", "doq":
 		return "doq"
 	default:
-		return ""
+		return "udp" // Default to UDP for unknown schemes
 	}
 }
 

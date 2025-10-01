@@ -116,3 +116,77 @@ hosts:
 		}
 	}
 }
+
+// Test with explicit URL scheme upstreams
+func TestSetHostsWithExplicitSchemes(t *testing.T) {
+	// Create a test config file with explicit schemes
+	testConfig := `app_name: outway
+listen:
+  udp: :5353
+  tcp: :5353
+upstreams:
+- name: cloudflare-doh
+  address: https://cloudflare-dns.com/dns-query
+  weight: 1
+- name: google-udp
+  address: udp://8.8.8.8:53
+  weight: 1
+rule_groups:
+- name: default
+  via: default
+  patterns:
+  - "*"
+`
+
+	tmpfile, err := os.CreateTemp("", "config-*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(testConfig)); err != nil {
+		t.Fatal(err)
+	}
+	tmpfile.Close()
+
+	// Load config
+	cfg, err := config.Load(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create proxy and test SetHosts
+	backend := &nullBackend{}
+	proxy := New(cfg, backend)
+	ctx := context.Background()
+
+	upstreamsBefore := proxy.GetUpstreams()
+	t.Logf("Upstreams before: %v", upstreamsBefore)
+	if len(upstreamsBefore) != 2 {
+		t.Errorf("Expected 2 upstreams before SetHosts, got %d", len(upstreamsBefore))
+	}
+
+	// Update hosts
+	if err := proxy.SetHosts(ctx, []config.HostOverride{{Pattern: "test.local", A: []string{"127.0.0.1"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	upstreamsAfter := proxy.GetUpstreams()
+	t.Logf("Upstreams after: %v", upstreamsAfter)
+	if len(upstreamsAfter) != 2 {
+		t.Errorf("Expected 2 upstreams after SetHosts, got %d - upstreams were lost!", len(upstreamsAfter))
+	}
+
+	// Verify saved config can be reloaded
+	cfg2, err := config.Load(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, u := range cfg2.Upstreams {
+		if u.Type == "" {
+			t.Errorf("Upstream %s has empty type after reload", u.Name)
+		}
+	}
+}
+
