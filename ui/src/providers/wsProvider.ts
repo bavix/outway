@@ -109,6 +109,27 @@ export class WSProvider implements Provider {
       payload = arr;
       try { console.debug('[WS] history', Array.isArray(arr) ? arr.length : 0); } catch {}
     }
+    if (message.type === 'stats' && payload) {
+      // Ensure stats data is properly formatted
+      if (typeof payload === 'object' && payload !== null) {
+        // Normalize stats data to ensure all required fields are present
+        payload = {
+          dns_queries_total: payload.dns_queries_total || 0,
+          dns_marks_total: payload.dns_marks_total || 0,
+          marks_dropped_total: payload.marks_dropped_total || 0,
+          dns_upstream_rtt_avg_seconds: payload.dns_upstream_rtt_avg_seconds || 0,
+          dns_request_avg_seconds: payload.dns_request_avg_seconds || 0,
+          service_ready: payload.service_ready || 0,
+          effective_rps: payload.effective_rps || 0,
+          origin_rps: payload.origin_rps || 0,
+          cache_hit_rate: payload.cache_hit_rate || 0,
+          ...payload // Keep any additional fields
+        };
+        try { console.debug('[WS] stats received:', payload); } catch {}
+      } else {
+        try { console.warn('[WS] Invalid stats payload:', payload); } catch {}
+      }
+    }
     if (message.type === 'overview' && payload) {
       try { (window as any).__ov = payload; } catch {}
     }
@@ -287,5 +308,38 @@ export class WSProvider implements Provider {
 
   async testResolve(_name: string, _type: 'A' | 'AAAA' | 'CNAME'): Promise<import('./types.js').ResolveResult> {
     throw new Error('Use REST provider for fetch operations');
+  }
+
+  // Generic event listener methods
+  on(event: string, callback: (data: any) => void): void {
+    if (!this.callbacks.has(event)) {
+      this.callbacks.set(event, new Set());
+    }
+    this.callbacks.get(event)!.add(callback);
+  }
+
+  off(event: string, callback: (data: any) => void): void {
+    const callbacks = this.callbacks.get(event);
+    if (callbacks) {
+      callbacks.delete(callback);
+    }
+  }
+
+  // Generic request method
+  async request(_method: string, _url: string, _body?: any): Promise<Response> {
+    throw new Error('Use REST provider for HTTP requests');
+  }
+
+  // Local DNS methods
+  async fetchLocalZones(): Promise<string[]> {
+    throw new Error('Use REST provider for Local DNS operations');
+  }
+
+  async fetchLocalLeases(): Promise<any[]> {
+    throw new Error('Use REST provider for Local DNS operations');
+  }
+
+  async testLocalResolve(_name: string): Promise<any> {
+    throw new Error('Use REST provider for Local DNS operations');
   }
 }

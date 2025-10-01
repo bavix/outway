@@ -22,7 +22,6 @@ var (
 	errCacheLimitsMustBeNonNegative  = errors.New("cache limits must be non-negative")
 	errUpstreamAddressCannotBeEmpty  = errors.New("upstream address cannot be empty")
 	errUpstreamInvalidWeight         = errors.New("upstream has invalid weight")
-	errAtLeastOneRuleGroupRequired   = errors.New("at least one rule group is required")
 	errRuleGroupNameCannotBeEmpty    = errors.New("rule group name cannot be empty")
 	errDuplicateRuleGroupName        = errors.New("duplicate rule group name")
 	errRuleGroupMustHavePattern      = errors.New("rule group must have at least one pattern")
@@ -198,6 +197,8 @@ type UpdateConfig struct {
 	IncludePrerelease bool `json:"include_prerelease" yaml:"include_prerelease,omitempty"`
 }
 
+// LocalZonesConfig is removed - Local DNS is now fully auto-detected
+
 // Config is the main application configuration.
 type Config struct {
 	AppName    string           `yaml:"app_name,omitempty"`
@@ -210,7 +211,8 @@ type Config struct {
 	HTTP       HTTPConfig       `yaml:"http,omitempty"`
 	Hosts      []HostOverride   `yaml:"hosts,omitempty"`
 	Update     UpdateConfig     `yaml:"update,omitempty"`
-	Path       string           `yaml:"-"`
+	// LocalZones removed - Local DNS is now fully auto-detected
+	Path string `yaml:"-"`
 }
 
 // global mutex to serialize YAML writes.
@@ -496,44 +498,44 @@ func (c *Config) Validate() error { //nolint:gocognit,cyclop,funlen
 		}
 	}
 
-	// Validate rule groups
-	if len(c.RuleGroups) == 0 {
-		return errAtLeastOneRuleGroupRequired
-	}
+	// Validate rule groups (optional)
+	// Rule groups are optional - if present, they must be valid
+	//nolint:nestif
+	if len(c.RuleGroups) > 0 {
+		groupNames := map[string]struct{}{}
+		seen := map[string]struct{}{}
 
-	groupNames := map[string]struct{}{}
-	seen := map[string]struct{}{}
-
-	for _, group := range c.RuleGroups {
-		if group.Name == "" {
-			return errRuleGroupNameCannotBeEmpty
-		}
-
-		if _, ok := groupNames[group.Name]; ok {
-			return fmt.Errorf("%w: %s", errDuplicateRuleGroupName, group.Name)
-		}
-
-		groupNames[group.Name] = struct{}{}
-
-		if len(group.Patterns) == 0 {
-			return fmt.Errorf("rule group '%s': %w", group.Name, errRuleGroupMustHavePattern)
-		}
-
-		if group.Via == "" {
-			return fmt.Errorf("rule group '%s': %w", group.Name, errRuleGroupRequiresViaInterface)
-		}
-
-		// Validate patterns within the group
-		for _, pattern := range group.Patterns {
-			if pattern == "" {
-				return fmt.Errorf("rule group '%s': %w", group.Name, errRuleGroupContainsEmptyPattern)
+		for _, group := range c.RuleGroups {
+			if group.Name == "" {
+				return errRuleGroupNameCannotBeEmpty
 			}
 
-			if _, ok := seen[pattern]; ok {
-				return fmt.Errorf("%w: %s", errDuplicateRulePattern, pattern)
+			if _, ok := groupNames[group.Name]; ok {
+				return fmt.Errorf("%w: %s", errDuplicateRuleGroupName, group.Name)
 			}
 
-			seen[pattern] = struct{}{}
+			groupNames[group.Name] = struct{}{}
+
+			if len(group.Patterns) == 0 {
+				return fmt.Errorf("rule group '%s': %w", group.Name, errRuleGroupMustHavePattern)
+			}
+
+			if group.Via == "" {
+				return fmt.Errorf("rule group '%s': %w", group.Name, errRuleGroupRequiresViaInterface)
+			}
+
+			// Validate patterns within the group
+			for _, pattern := range group.Patterns {
+				if pattern == "" {
+					return fmt.Errorf("rule group '%s': %w", group.Name, errRuleGroupContainsEmptyPattern)
+				}
+
+				if _, ok := seen[pattern]; ok {
+					return fmt.Errorf("%w: %s", errDuplicateRulePattern, pattern)
+				}
+
+				seen[pattern] = struct{}{}
+			}
 		}
 	}
 

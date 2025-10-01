@@ -115,6 +115,7 @@ export class FailoverProvider implements Provider {
     const set = this.listeners.get(topic);
     if (!set || set.size === 0) return;
     const multiCb = (data: any) => set.forEach(fn => { try { fn(data); } catch {} });
+    
     // Prefer WS if connected; maintain REST backup only when WS is down
     if (this.isWSConnected) {
       switch (topic) {
@@ -128,15 +129,43 @@ export class FailoverProvider implements Provider {
         case 'cache': this.wsUnsubs.set(topic, (this.wsProvider as any).onCache(multiCb)); break;
       }
     } else {
+      // When switching to REST, immediately fetch data to avoid N/A values
       switch (topic) {
-        case 'rule_groups': this.restUnsubs.set(topic, this.restProvider.onRuleGroups(multiCb)); break;
-        case 'upstreams': this.restUnsubs.set(topic, this.restProvider.onUpstreams(multiCb)); break;
-        case 'stats': this.restUnsubs.set(topic, this.restProvider.onStats(multiCb)); break;
-        case 'history': this.restUnsubs.set(topic, this.restProvider.onHistory(multiCb)); break;
-        case 'hosts': this.restUnsubs.set(topic, this.restProvider.onHosts(multiCb)); break;
-        case 'overview': this.restUnsubs.set(topic, this.restProvider.onOverview(multiCb)); break;
-        case 'update_available': this.restUnsubs.set(topic, this.restProvider.onUpdateAvailable(multiCb)); break;
-        case 'cache': this.restUnsubs.set(topic, (this.restProvider as any).onCache(multiCb)); break;
+        case 'rule_groups': 
+          this.restUnsubs.set(topic, this.restProvider.onRuleGroups(multiCb));
+          this.restProvider.fetchRuleGroups().then(multiCb).catch(console.error);
+          break;
+        case 'upstreams': 
+          this.restUnsubs.set(topic, this.restProvider.onUpstreams(multiCb));
+          this.restProvider.fetchUpstreams().then(multiCb).catch(console.error);
+          break;
+        case 'stats': 
+          this.restUnsubs.set(topic, this.restProvider.onStats(multiCb));
+          this.restProvider.fetchStats().then(data => {
+            console.debug('[FailoverProvider] Stats loaded via REST:', data);
+            multiCb(data);
+          }).catch(err => {
+            console.error('[FailoverProvider] Failed to load stats via REST:', err);
+          });
+          break;
+        case 'history': 
+          this.restUnsubs.set(topic, this.restProvider.onHistory(multiCb));
+          this.restProvider.fetchHistory().then(multiCb).catch(console.error);
+          break;
+        case 'hosts': 
+          this.restUnsubs.set(topic, this.restProvider.onHosts(multiCb));
+          this.restProvider.fetchHosts().then(multiCb).catch(console.error);
+          break;
+        case 'overview': 
+          this.restUnsubs.set(topic, this.restProvider.onOverview(multiCb));
+          this.restProvider.fetchOverview().then(multiCb).catch(console.error);
+          break;
+        case 'update_available': 
+          this.restUnsubs.set(topic, this.restProvider.onUpdateAvailable(multiCb));
+          break;
+        case 'cache': 
+          this.restUnsubs.set(topic, (this.restProvider as any).onCache(multiCb));
+          break;
       }
     }
   }
@@ -318,5 +347,44 @@ export class FailoverProvider implements Provider {
 
   async cacheDelete(req: CacheDeleteRequest): Promise<CacheOpResponse> {
     return this.restProvider.cacheDelete(req);
+  }
+
+  // Generic event listener methods
+  on(event: string, callback: (data: any) => void): void {
+    if (this.isWSConnected) {
+      this.wsProvider.on(event, callback);
+    } else {
+      this.restProvider.on(event, callback);
+    }
+  }
+
+  off(event: string, callback: (data: any) => void): void {
+    if (this.isWSConnected) {
+      this.wsProvider.off(event, callback);
+    } else {
+      this.restProvider.off(event, callback);
+    }
+  }
+
+  // Generic request method
+  async request(method: string, url: string, body?: any): Promise<Response> {
+    if (this.isWSConnected) {
+      return this.wsProvider.request(method, url, body);
+    } else {
+      return this.restProvider.request(method, url, body);
+    }
+  }
+
+  // Local DNS methods
+  async fetchLocalZones(): Promise<string[]> {
+    return this.restProvider.fetchLocalZones();
+  }
+
+  async fetchLocalLeases(): Promise<any[]> {
+    return this.restProvider.fetchLocalLeases();
+  }
+
+  async testLocalResolve(name: string): Promise<any> {
+    return this.restProvider.testLocalResolve(name);
   }
 }

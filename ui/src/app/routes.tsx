@@ -6,6 +6,7 @@ import { Rules } from '../pages/Rules.js';
 import { Upstreams } from '../pages/Upstreams.js';
 import { History } from '../pages/History.js';
 import { Hosts } from '../pages/Hosts.js';
+import { LocalDNS } from '../pages/LocalDNS.js';
 import Update from '../pages/Update.js';
 import CachePage from '../pages/Cache.js';
 import { Sidebar } from '../components/Sidebar.js';
@@ -14,7 +15,14 @@ import { useTheme } from '../hooks/useTheme.js';
 import { ToastContainer } from '../components/Toast.js';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState('overview');
+  // Initialize activeTab from hash if available, otherwise default to 'overview'
+  const getInitialTab = () => {
+    const hash = window.location.hash.slice(1);
+    const validTabs = ['overview', 'rules', 'upstreams', 'history', 'hosts', 'localdns', 'resolve', 'cache', 'update'];
+    return validTabs.includes(hash) ? hash : 'overview';
+  };
+  
+  const [activeTab, setActiveTab] = useState(getInitialTab());
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [provider, setProvider] = useState<FailoverProvider | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type?: 'success' | 'error' | 'warning' | 'info'; duration?: number }>>([]);
@@ -36,7 +44,7 @@ export function App() {
     // Handle hash changes for routing
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1);
-      const validTabs = ['overview', 'rules', 'upstreams', 'history', 'hosts', 'resolve', 'cache', 'update'];
+      const validTabs = ['overview', 'rules', 'upstreams', 'history', 'hosts', 'localdns', 'resolve', 'cache', 'update'];
       if (validTabs.includes(hash)) {
         setActiveTab(hash);
       }
@@ -145,6 +153,7 @@ export function App() {
             {activeTab === 'upstreams' && <Upstreams provider={provider} />}
             {activeTab === 'history' && <History provider={provider} />}
             {activeTab === 'hosts' && <Hosts provider={provider} />}
+            {activeTab === 'localdns' && <LocalDNS provider={provider} />}
             {activeTab === 'resolve' && <Resolve provider={provider} />}
             {activeTab === 'cache' && <CachePage provider={provider} />}
             {activeTab === 'update' && <Update provider={provider} />}

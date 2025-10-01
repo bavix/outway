@@ -18,7 +18,9 @@ type Backend interface {
 }
 
 // DetectBackend detects the appropriate firewall backend for the current system.
-func DetectBackend(ctx context.Context) (Backend, error) { //nolint:ireturn // interface return required for backend abstraction
+//
+
+func DetectBackend(ctx context.Context) (Backend, error) { //nolint:ireturn
 	log := zerolog.Ctx(ctx)
 
 	switch runtime.GOOS {

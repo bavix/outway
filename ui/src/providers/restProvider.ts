@@ -26,7 +26,9 @@ export class RESTProvider implements Provider {
     rule_groups: 300000,     // 5m
     upstreams: 300000,  // 5m
     hosts: 300000,
-    cache: 30000
+    cache: 30000,
+    local_zones: 30000,  // 30s
+    local_leases: 30000  // 30s
   };
 
   constructor(private baseUrl: string = '') {}
@@ -286,5 +288,53 @@ export class RESTProvider implements Provider {
   async fetchCacheKey(key: string): Promise<CacheKeyDetails> {
     const p = new URLSearchParams({ key });
     return this.fetchJSON<CacheKeyDetails>(`/api/v1/cache/key?${p.toString()}`);
+  }
+
+  // Generic event listener methods
+  on(event: string, callback: (data: any) => void): void {
+    if (!this.callbacks.has(event)) {
+      this.callbacks.set(event, new Set());
+    }
+    this.callbacks.get(event)!.add(callback);
+  }
+
+  off(event: string, callback: (data: any) => void): void {
+    const callbacks = this.callbacks.get(event);
+    if (callbacks) {
+      callbacks.delete(callback);
+    }
+  }
+
+  // Generic request method
+  async request(method: string, url: string, body?: any): Promise<Response> {
+    const fullUrl = `${this.baseUrl}${url}`;
+    const options: RequestInit = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    };
+    
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+    
+    return fetch(fullUrl, options);
+  }
+
+  // Local DNS methods
+  async fetchLocalZones(): Promise<string[]> {
+    const response = await this.fetchJSON<{zones: string[]}>('/api/v1/local/zones');
+    return response.zones || [];
+  }
+
+  async fetchLocalLeases(): Promise<any[]> {
+    const response = await this.fetchJSON<{leases: any[]}>('/api/v1/local/leases');
+    return response.leases || [];
+  }
+
+  async testLocalResolve(name: string): Promise<any> {
+    const params = new URLSearchParams({ name });
+    return this.fetchJSON<any>(`/api/v1/local/resolve?${params.toString()}`);
   }
 }

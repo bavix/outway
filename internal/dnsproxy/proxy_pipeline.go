@@ -9,8 +9,11 @@ import (
 	"github.com/miekg/dns"
 
 	"github.com/bavix/outway/internal/config"
+	"github.com/bavix/outway/internal/lanresolver"
+	"github.com/bavix/outway/internal/localzone"
 )
 
+//nolint:funlen
 func (p *Proxy) rebuildResolver(ctx context.Context) {
 	// Build upstream resolvers using weighted order from config
 	strategies := []UpstreamStrategy{UDPStrategy{}, TCPStrategy{}, DoHStrategy{}, DotStrategy{}}
@@ -25,34 +28,65 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 		},
 	}
 
-	var rs []Resolver
-	// Prefer explicit config objects (with weight)
-	ups := p.cfg.GetUpstreamsByWeight()
-	if len(ups) == 0 {
-		// Fallback to legacy string list
-		rs = p.buildLegacyResolvers(strategies, deps)
-	} else {
-		rs = p.buildWeightedResolvers(ups, strategies, deps)
+	// Get upstreams from manager
+	rs := p.upstreams.RebuildResolvers(ctx, strategies, deps)
+
+	// Ensure we have at least one resolver
+	if len(rs) == 0 {
+		// If no resolvers were created, create a default fallback resolver
+		defaultUpstreams := []string{"udp:8.8.8.8:53", "udp:1.1.1.1:53"}
+		for _, raw := range defaultUpstreams {
+			netw, addr := parseUpstream(raw)
+			for _, s := range strategies {
+				if s.Supports(netw) {
+					if r := s.NewResolver(netw, addr, deps); r != nil {
+						rs = append(rs, r)
+					}
+
+					break
+				}
+			}
+		}
 	}
 
 	chain := NewChainResolver(rs...)
-	hosts := &HostsResolver{Next: chain, Hosts: p.cfg.Hosts, Cfg: p.cfg}
-	mark := &MarkResolver{Next: hosts, Backend: p.backend, Rules: p.rules, Cfg: p.cfg}
+
+	// Create hosts resolver using manager
+	cfg := p.config.GetConfig()
+	hosts := p.hosts.CreateHostsResolver(chain, cfg)
+
+	// Initialize zone detector and lease manager with auto-detection
+	zoneDetector := localzone.NewZoneDetector()
+	leaseManager := lanresolver.NewLeaseManager("/tmp/dhcp.leases")
+
+	// Load initial leases
+	if err := leaseManager.LoadLeases(); err != nil {
+		_ = err // Suppress unused variable warning
+	}
+
+	// Create LAN resolver (always enabled)
+	lanResolver := lanresolver.NewLANResolver(hosts, zoneDetector, leaseManager)
+	next := Resolver(lanResolver)
+
+	// Create mark resolver using managers
+	mark := &MarkResolver{
+		Next:    next,
+		Backend: p.backend,
+		Rules:   p.rules.GetRules(),
+		Cfg:     cfg,
+	}
 
 	// Build core without metrics first so cache can wrap it
 	var core Resolver = mark
 
-	if p.cfg.Cache.Enabled {
-		cache := NewCachedResolver(
-			core,
-			p.cfg.Cache.MaxEntries,
-			p.cfg.Cache.MinTTLSeconds,
-			p.cfg.Cache.MaxTTLSeconds,
-		)
-		if p.cfg.Cache.ServeStale {
-			core = &ServeStaleResolver{Cache: cache}
+	if cfg.Cache.Enabled && p.cache != nil {
+		// Update the existing cache's Next resolver instead of creating a new one
+		p.cache.UpdateCacheNext(core)
+
+		if cfg.Cache.ServeStale {
+			core = &ServeStaleResolver{Cache: p.cache.GetCache()}
 		} else {
-			core = cache
+			core = p.cache.GetCache()
 		}
 	}
 
@@ -64,7 +98,8 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 func (p *Proxy) buildLegacyResolvers(strategies []UpstreamStrategy, deps StrategyDeps) []Resolver {
 	var rs []Resolver
 
-	for _, raw := range p.upstreams {
+	upstreams := p.upstreams.GetUpstreamAddresses()
+	for _, raw := range upstreams {
 		netw, addr := parseUpstream(raw)
 		for _, s := range strategies {
 			if s.Supports(netw) {
