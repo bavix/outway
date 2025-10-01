@@ -15,10 +15,10 @@ const (
 
 // Watcher watches config files for changes and triggers callbacks.
 type Watcher struct {
-	fsWatcher *fsnotify.Watcher
-	callbacks []func()
-	mu        sync.RWMutex
-	debounce  map[string]*time.Timer
+	fsWatcher  *fsnotify.Watcher
+	callbacks  []func()
+	mu         sync.RWMutex
+	debounce   map[string]*time.Timer
 	debounceMu sync.Mutex
 }
 
