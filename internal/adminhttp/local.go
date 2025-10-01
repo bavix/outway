@@ -95,38 +95,9 @@ func (s *Server) handleLocalResolve(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, result)
 }
 
-// getLANResolver attempts to find the LAN resolver in the resolver chain.
-func (s *Server) getLANResolver() *lanresolver.Resolver {
-	resolverAny := s.proxy.ResolverActive()
-	if resolverAny == nil {
-		return nil
-	}
-
-	// Try to find LAN resolver in the chain
-	return findLANResolver(resolverAny)
-}
-
-// findLANResolver recursively searches for a LAN resolver in the resolver chain.
-func findLANResolver(resolver interface{}) *lanresolver.Resolver {
-	if resolver == nil {
-		return nil
-	}
-
-	// Direct match
-	if lan, ok := resolver.(*lanresolver.Resolver); ok {
-		return lan
-	}
-
-	// Check for Next field (common pattern in resolver chain)
-	type hasNext interface {
-		GetNext() interface{}
-	}
-
-	if hn, ok := resolver.(hasNext); ok {
-		return findLANResolver(hn.GetNext())
-	}
-
-	return nil
+// getLANResolver attempts to find the LAN resolver from the proxy.
+func (s *Server) getLANResolver() *lanresolver.LANResolver {
+	return s.proxy.GetLANResolver()
 }
 
 // broadcastLocalUpdate sends local DNS updates to all WebSocket clients.

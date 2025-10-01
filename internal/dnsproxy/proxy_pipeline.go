@@ -37,7 +37,17 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 
 	chain := NewChainResolver(rs...)
 	hosts := &HostsResolver{Next: chain, Hosts: p.cfg.Hosts, Cfg: p.cfg}
-	mark := &MarkResolver{Next: hosts, Backend: p.backend, Rules: p.rules, Cfg: p.cfg}
+
+	// Add LAN resolver if enabled and initialized
+	var afterHosts Resolver = hosts
+	if p.lanResolver != nil && p.cfg.LocalZones.Enabled {
+		// Wire up the LAN resolver with the chain
+		p.lanResolver.Next = chain
+		// LAN resolver comes after hosts but before mark
+		afterHosts = p.lanResolver
+	}
+
+	mark := &MarkResolver{Next: afterHosts, Backend: p.backend, Rules: p.rules, Cfg: p.cfg}
 
 	// Build core without metrics first so cache can wrap it
 	var core Resolver = mark

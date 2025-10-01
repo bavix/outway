@@ -20,6 +20,8 @@ import (
 
 	"github.com/bavix/outway/internal/config"
 	"github.com/bavix/outway/internal/firewall"
+	"github.com/bavix/outway/internal/lanresolver"
+	"github.com/bavix/outway/internal/localzone"
 	"github.com/bavix/outway/internal/metrics"
 	"github.com/bavix/outway/internal/version"
 )
@@ -153,16 +155,18 @@ type Proxy struct {
 	upstreams []string
 	rules     *RuleStore
 	// removed legacy cache fields (using decorator now)
-	active    atomic.Value // Resolver
-	persistMu sync.Mutex
-	histMu    sync.Mutex
-	histBuf   []QueryEvent
-	histCap   int
-	histHead  int
-	histSize  int
-	dnsUDP    *dns.Client
-	dnsTCP    *dns.Client
-	dohClient *http.Client
+	active      atomic.Value // Resolver
+	persistMu   sync.Mutex
+	histMu      sync.Mutex
+	histBuf     []QueryEvent
+	histCap     int
+	histHead    int
+	histSize    int
+	dnsUDP      *dns.Client
+	dnsTCP      *dns.Client
+	dohClient   *http.Client
+	lanResolver *lanresolver.LANResolver
+	lanWatcher  *localzone.Watcher
 }
 
 // ResolverActive returns the current active resolver atomically.
@@ -212,6 +216,12 @@ func (p *Proxy) Start(ctx context.Context) error {
 		Str("build_time", version.GetBuildTime()).
 		Msg("starting DNS servers")
 	metrics.SetReady(true)
+
+	// Initialize LAN resolver if enabled
+	if p.cfg.LocalZones.Enabled {
+		p.initLANResolver(ctx)
+	}
+
 	// initial pipeline
 	p.rebuildResolver(ctx)
 
@@ -847,6 +857,82 @@ func extractClientIP(w dns.ResponseWriter, r *dns.Msg) string {
 
 	// Fallback to RemoteAddr (direct connection or no EDNS0)
 	return extractClientIPFromRemoteAddr(w)
+}
+
+// initLANResolver initializes the LAN resolver and file watcher.
+func (p *Proxy) initLANResolver(ctx context.Context) {
+	logger := zerolog.Ctx(ctx)
+
+	// Set default paths if not specified
+	cfg := &p.cfg.LocalZones
+	if cfg.UCIPath == "" {
+		cfg.UCIPath = "/etc/config/dhcp"
+	}
+	if cfg.ResolvPath == "" {
+		cfg.ResolvPath = "/tmp/resolv.conf.auto"
+	}
+	if cfg.LeasesPath == "" {
+		cfg.LeasesPath = "/tmp/dhcp.leases"
+	}
+
+	// Detect local zones
+	zones := localzone.DetectLocalZones(cfg.LocalZones, cfg.UCIPath, cfg.ResolvPath)
+	logger.Info().Strs("zones", zones).Msg("detected local DNS zones")
+
+	// Parse initial leases
+	leases, err := lanresolver.ParseLeases(cfg.LeasesPath)
+	if err != nil {
+		logger.Warn().Err(err).Str("path", cfg.LeasesPath).Msg("failed to parse DHCP leases, will retry on file changes")
+		leases = []lanresolver.Lease{}
+	} else {
+		logger.Info().Int("count", len(leases)).Msg("loaded DHCP leases")
+	}
+
+	// Create LAN resolver (will be added to chain in rebuildResolver)
+	p.lanResolver = lanresolver.NewResolver(nil, zones, p.cfg)
+	p.lanResolver.UpdateLeases(leases, zones)
+
+	// Set up file watcher
+	watcher, err := localzone.NewWatcher()
+	if err != nil {
+		logger.Warn().Err(err).Msg("failed to create file watcher for LAN resolver")
+		return
+	}
+	p.lanWatcher = watcher
+
+	// Callback to reload leases and zones
+	reloadFn := func() {
+		// Reload zones
+		newZones := localzone.DetectLocalZones(cfg.LocalZones, cfg.UCIPath, cfg.ResolvPath)
+
+		// Reload leases
+		newLeases, err := lanresolver.ParseLeases(cfg.LeasesPath)
+		if err != nil {
+			logger.Warn().Err(err).Msg("failed to reload DHCP leases")
+			// Keep old leases on error
+			newLeases = p.lanResolver.GetLeases()
+		}
+
+		logger.Debug().
+			Strs("zones", newZones).
+			Int("leases", len(newLeases)).
+			Msg("reloaded local DNS data")
+
+		p.lanResolver.UpdateLeases(newLeases, newZones)
+	}
+
+	watcher.OnChange(reloadFn)
+
+	// Start watching files
+	filesToWatch := []string{cfg.LeasesPath, cfg.UCIPath, cfg.ResolvPath}
+	watcher.Watch(ctx, filesToWatch)
+
+	logger.Info().Strs("files", filesToWatch).Msg("watching files for local DNS changes")
+}
+
+// GetLANResolver returns the LAN resolver if initialized.
+func (p *Proxy) GetLANResolver() *lanresolver.LANResolver {
+	return p.lanResolver
 }
 
 // ensure import usage.

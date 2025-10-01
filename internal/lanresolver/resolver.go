@@ -10,16 +10,20 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/bavix/outway/internal/config"
-	"github.com/bavix/outway/internal/dnsproxy"
 )
 
 const (
 	defaultTTL = 60
 )
 
-// Resolver resolves DNS queries for local zones from DHCP leases.
-type Resolver struct {
-	Next     dnsproxy.Resolver
+// Resolver interface for DNS resolution (avoids import cycle).
+type Resolver interface {
+	Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error)
+}
+
+// LANResolver resolves DNS queries for local zones from DHCP leases.
+type LANResolver struct {
+	Next     Resolver
 	zones    []string
 	hostMap  map[string][]string
 	leases   []Lease
@@ -29,8 +33,8 @@ type Resolver struct {
 }
 
 // NewResolver creates a new LAN resolver.
-func NewResolver(next dnsproxy.Resolver, zones []string, cfg *config.Config) *Resolver {
-	return &Resolver{
+func NewResolver(next Resolver, zones []string, cfg *config.Config) *LANResolver {
+	return &LANResolver{
 		Next:    next,
 		zones:   zones,
 		hostMap: make(map[string][]string),
@@ -39,7 +43,7 @@ func NewResolver(next dnsproxy.Resolver, zones []string, cfg *config.Config) *Re
 }
 
 // UpdateLeases updates the lease data and rebuilds the host map.
-func (r *Resolver) UpdateLeases(leases []Lease, zones []string) {
+func (r *LANResolver) UpdateLeases(leases []Lease, zones []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -54,28 +58,28 @@ func (r *Resolver) UpdateLeases(leases []Lease, zones []string) {
 }
 
 // SetOnChange registers a callback for lease updates.
-func (r *Resolver) SetOnChange(callback func()) {
+func (r *LANResolver) SetOnChange(callback func()) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.onChange = callback
 }
 
 // GetZones returns the current local zones.
-func (r *Resolver) GetZones() []string {
+func (r *LANResolver) GetZones() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.zones
 }
 
 // GetLeases returns the current leases.
-func (r *Resolver) GetLeases() []Lease {
+func (r *LANResolver) GetLeases() []Lease {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.leases
 }
 
 // Resolve implements the dnsproxy.Resolver interface.
-func (r *Resolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) {
+func (r *LANResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) {
 	if q == nil || len(q.Question) == 0 {
 		return r.Next.Resolve(ctx, q)
 	}
@@ -169,7 +173,7 @@ func (r *Resolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, e
 }
 
 // isLocalZone checks if the query name ends with a local zone.
-func (r *Resolver) isLocalZone(name string) bool {
+func (r *LANResolver) isLocalZone(name string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
