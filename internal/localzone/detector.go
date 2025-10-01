@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"regexp"
 	"strings"
@@ -142,7 +143,7 @@ func (zd *ZoneDetector) DetectZones() ([]string, error) { //nolint:cyclop
 //
 //nolint:funcorder
 func (zd *ZoneDetector) detectFromUCI() ([]string, error) {
-	if _, err := os.Stat(zd.UCIConfigPath); os.IsNotExist(err) {
+	if _, err := os.Stat(zd.UCIConfigPath); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("%w: %s", ErrUCIConfigNotFound, zd.UCIConfigPath)
 	}
 
@@ -309,7 +310,7 @@ func (zd *ZoneDetector) parseDnsmasqSection(scanner *bufio.Scanner, domainRegex 
 //
 //nolint:funcorder
 func (zd *ZoneDetector) detectFromResolvConf() ([]string, error) {
-	if _, err := os.Stat(zd.ResolvConfPath); os.IsNotExist(err) {
+	if _, err := os.Stat(zd.ResolvConfPath); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("%w: %s", ErrResolvConfNotFound, zd.ResolvConfPath)
 	}
 

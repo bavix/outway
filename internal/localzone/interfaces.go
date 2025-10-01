@@ -1,6 +1,8 @@
 package localzone
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 )
 
@@ -31,7 +33,7 @@ func (r *OSFileReader) ReadFile(path string) ([]byte, error) {
 func (r *OSFileReader) FileExists(path string) bool {
 	_, err := os.Stat(path)
 
-	return !os.IsNotExist(err)
+	return !errors.Is(err, fs.ErrNotExist)
 }
 
 // MockFileReader implements FileReader for testing.
