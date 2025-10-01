@@ -47,7 +47,16 @@ func NewLANResolver(next interface {
 // Resolve resolves DNS queries for local zones.
 func (lr *LANResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) {
 	if q == nil || len(q.Question) == 0 {
-		return lr.Next.Resolve(ctx, q)
+		if lr.Next != nil {
+			return lr.Next.Resolve(ctx, q)
+		}
+		// Return error response if no Next resolver
+		response := new(dns.Msg)
+		if q != nil {
+			response.SetReply(q)
+		}
+		response.Rcode = dns.RcodeServerFailure
+		return response, lanResolverID, nil
 	}
 
 	question := q.Question[0]
@@ -74,7 +83,14 @@ func (lr *LANResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, strin
 	
 	if !isLocal {
 		// Not a local zone, pass to next resolver
-		return lr.Next.Resolve(ctx, q)
+		if lr.Next != nil {
+			return lr.Next.Resolve(ctx, q)
+		}
+		// If no Next resolver, return NXDOMAIN
+		response := new(dns.Msg)
+		response.SetReply(q)
+		response.Rcode = dns.RcodeNameError
+		return response, lanResolverID, nil
 	}
 
 	// This is a local zone query - resolve from DHCP leases
