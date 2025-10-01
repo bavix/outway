@@ -78,7 +78,8 @@ func (lm *LeaseManager) LoadLeases() error {
 
 		lease := lm.ParseLeaseLine(line)
 		if lease != nil && lease.Hostname != "" {
-			lm.leases[lease.Hostname] = lease
+			// Store with lowercase hostname for case-insensitive lookups
+			lm.leases[strings.ToLower(lease.Hostname)] = lease
 		}
 	}
 
@@ -90,7 +91,8 @@ func (lm *LeaseManager) GetLease(hostname string) *Lease {
 	lm.mu.RLock()
 	defer lm.mu.RUnlock()
 
-	lease, exists := lm.leases[hostname]
+	// Case-insensitive lookup
+	lease, exists := lm.leases[strings.ToLower(hostname)]
 	if !exists {
 		return nil
 	}
@@ -123,7 +125,8 @@ func (lm *LeaseManager) GetAllLeases() []*Lease {
 
 // ResolveHostname resolves a hostname to IP addresses.
 func (lm *LeaseManager) ResolveHostname(hostname string) ([]net.IP, []net.IP) {
-	lease := lm.GetLease(hostname)
+	// Case-insensitive hostname lookup
+	lease := lm.GetLease(strings.ToLower(hostname))
 	if lease == nil {
 		return nil, nil
 	}
@@ -149,7 +152,7 @@ func (lm *LeaseManager) ResolveHostname(hostname string) ([]net.IP, []net.IP) {
 
 // IsValidHostname checks if a hostname has a valid lease.
 func (lm *LeaseManager) IsValidHostname(hostname string) bool {
-	return lm.GetLease(hostname) != nil
+	return lm.GetLease(strings.ToLower(hostname)) != nil
 }
 
 // GetLeaseCount returns the number of valid leases.

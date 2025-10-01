@@ -51,11 +51,27 @@ func (lr *LANResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, strin
 	}
 
 	question := q.Question[0]
+	// Normalize domain: lowercase and remove trailing dot
 	domain := strings.ToLower(strings.TrimSuffix(question.Name, "."))
 	qtype := question.Qtype
 
 	// Check if this is a local zone query
 	isLocal, zone := lr.ZoneDetector.IsLocalZone(domain)
+	
+	// If not a local zone, try appending detected zones (e.g., .lan)
+	// This handles queries like "ipad" -> "ipad.lan"
+	if !isLocal {
+		zones, _ := lr.ZoneDetector.DetectZones()
+		for _, z := range zones {
+			testDomain := domain + "." + z
+			isLocal, zone = lr.ZoneDetector.IsLocalZone(testDomain)
+			if isLocal {
+				domain = testDomain
+				break
+			}
+		}
+	}
+	
 	if !isLocal {
 		// Not a local zone, pass to next resolver
 		return lr.Next.Resolve(ctx, q)

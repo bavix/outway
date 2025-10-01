@@ -280,6 +280,73 @@ func TestLeaseManager_GetLeaseCount(t *testing.T) {
 	}
 }
 
+func TestLeaseManager_CaseInsensitiveResolve(t *testing.T) {
+	// Create test filesystem
+	fs := fstest.MapFS{
+		"dhcp.leases": &fstest.MapFile{
+			Data: []byte(`2000000000 00:11:22:33:44:55 192.168.1.100 iPad.lan *`),
+		},
+	}
+
+	lm := lanresolver.NewLeaseManagerWithReader("dhcp.leases", &FSTestFileReader{fs: fs})
+
+	err := lm.LoadLeases()
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Test case-insensitive lookups
+	tests := []struct {
+		name     string
+		hostname string
+		expected string
+		found    bool
+	}{
+		{
+			name:     "original case",
+			hostname: "ipad.lan",
+			expected: "192.168.1.100",
+			found:    true,
+		},
+		{
+			name:     "uppercase",
+			hostname: "IPAD.LAN",
+			expected: "192.168.1.100",
+			found:    true,
+		},
+		{
+			name:     "mixed case",
+			hostname: "iPAD.LAN",
+			expected: "192.168.1.100",
+			found:    true,
+		},
+		{
+			name:     "lowercase",
+			hostname: "ipad.lan",
+			expected: "192.168.1.100",
+			found:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ips, _ := lm.ResolveHostname(tt.hostname)
+
+			if tt.found {
+				if len(ips) == 0 {
+					t.Errorf("Expected IP %s for %s, got empty", tt.expected, tt.hostname)
+				} else if ips[0].String() != tt.expected {
+					t.Errorf("Expected IP %s for %s, got %s", tt.expected, tt.hostname, ips[0].String())
+				}
+			} else {
+				if len(ips) > 0 {
+					t.Errorf("Expected no IP for %s, got %s", tt.hostname, ips[0].String())
+				}
+			}
+		})
+	}
+}
+
 // FSTestFileReader implements file reading using testing/fstest.MapFS.
 type FSTestFileReader struct {
 	fs fstest.MapFS
