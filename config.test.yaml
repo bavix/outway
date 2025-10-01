@@ -100,3 +100,13 @@ hosts:
   a:
   - 127.0.0.1
   ttl: 60
+# Local DNS / LAN resolver
+# Resolves .lan, .home domains from DHCP leases (similar to dnsmasq)
+local_zones:
+  enabled: false  # Set to true on OpenWrt to enable
+  # Optional: explicit zone override (otherwise auto-detected from UCI/resolv.conf)
+  # local_zones: ["lan", "home"]
+  # Optional: custom paths (defaults shown)
+  # uci_path: /etc/config/dhcp
+  # resolv_path: /tmp/resolv.conf.auto
+  # leases_path: /tmp/dhcp.leases
