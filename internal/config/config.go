@@ -53,31 +53,37 @@ func detectType(addr string) string {
 		return ""
 	}
 
+	// First, try to parse as URL with explicit scheme
 	u, err := url.Parse(a)
-	if err != nil || u.Scheme == "" {
-		// No URL scheme detected - check for special cases
-		// If it's a valid host:port, default to UDP (like configDetectType in proxy.go)
-		if _, port, err := net.SplitHostPort(a); err == nil && port == "853" {
+	if err == nil && u.Scheme != "" && u.Host != "" {
+		// Valid URL with scheme and host (e.g., udp://1.1.1.1:53)
+		switch strings.ToLower(u.Scheme) {
+		case "https":
+			return "doh"
+		case "udp":
+			return "udp"
+		case "tcp":
+			return "tcp"
+		case protocolTLS, protocolDot:
 			return "dot"
+		case "quic", "doq":
+			return "doq"
+		default:
+			return "udp" // Default to UDP for unknown schemes
 		}
-		// Default to UDP for plain addresses like 1.1.1.1:53
-		return "udp"
 	}
 
-	switch strings.ToLower(u.Scheme) {
-	case "https":
-		return "doh"
-	case "udp":
-		return "udp"
-	case "tcp":
-		return "tcp"
-	case protocolTLS, protocolDot:
-		return "dot"
-	case "quic", "doq":
-		return "doq"
-	default:
-		return "udp" // Default to UDP for unknown schemes
+	// No valid URL scheme - check if it's a plain host:port
+	if _, port, err := net.SplitHostPort(a); err == nil {
+		// Valid host:port format
+		if port == "853" {
+			return "dot" // Port 853 is the standard DoT port
+		}
+		return "udp" // Default to UDP for other ports
 	}
+
+	// Not a valid host:port or URL - default to UDP
+	return "udp"
 }
 
 // ListenConfig defines DNS server listening configuration.
