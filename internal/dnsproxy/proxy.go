@@ -148,18 +148,19 @@ func (s *RuleStore) Find(host string) (config.Rule, bool) {
 }
 
 type Proxy struct {
-	cfg       *config.Config
-	backend   firewall.Backend
-	upstreams []string
-	rules     *RuleStore
-	// removed legacy cache fields (using decorator now)
-	active    atomic.Value // Resolver
-	persistMu sync.Mutex
-	histMu    sync.Mutex
-	histBuf   []QueryEvent
-	histCap   int
-	histHead  int
-	histSize  int
+	// Managers for thread-safe operations
+	upstreams UpstreamsManager
+	hosts     HostsManager
+	cache     CacheManager
+	history   HistoryManager
+	rules     RulesManager
+	config    ConfigManager
+
+	// Core components
+	backend firewall.Backend
+	active  atomic.Value // Resolver
+
+	// DNS clients
 	dnsUDP    *dns.Client
 	dnsTCP    *dns.Client
 	dohClient *http.Client
@@ -183,31 +184,47 @@ func New(cfg *config.Config, backend firewall.Backend) *Proxy {
 	}
 
 	p := &Proxy{
-		cfg:       cfg,
 		backend:   backend,
-		upstreams: cfg.GetUpstreamAddresses(),
-		rules:     NewRuleStore(cfg.GetAllRules()),
-		histCap:   capacity,
 		dnsUDP:    &dns.Client{Net: "udp", Timeout: defaultDNSTimeout},
 		dnsTCP:    &dns.Client{Net: "tcp", Timeout: defaultDNSTimeout},
 		dohClient: &http.Client{Timeout: defaultDoHTimeout},
 	}
-	p.histBuf = make([]QueryEvent, p.histCap)
-	// cache provided by decorator
+
+	// Initialize managers
+	p.config = newConfigManager(cfg)
+	p.upstreams = newUpstreamsManager(p, cfg.Upstreams)
+	p.hosts = newHostsManager(cfg)
+	p.history = newHistoryManager(capacity)
+	p.rules = newRulesManager(NewRuleStore(cfg.GetAllRules()), cfg.RuleGroups)
+
+	// Initialize cache if enabled
+	if cfg.Cache.Enabled {
+		cache := NewCachedResolver(
+			nil, // Will be set in rebuildResolver
+			cfg.Cache.MaxEntries,
+			cfg.Cache.MinTTLSeconds,
+			cfg.Cache.MaxTTLSeconds,
+		)
+		p.cache = newCacheManager(cache)
+	}
+
+	// Initialize the resolver pipeline
+	p.rebuildResolver(context.Background())
 
 	return p
 }
 
 func (p *Proxy) Start(ctx context.Context) error {
-	if p.cfg == nil {
+	cfg := p.config.GetConfig()
+	if cfg == nil {
 		return errProxyConfigurationNil
 	}
 
 	metrics.StartRPSTicker()
 
 	zerolog.Ctx(ctx).Info().
-		Str("udp", p.cfg.Listen.UDP).
-		Str("tcp", p.cfg.Listen.TCP).
+		Str("udp", cfg.Listen.UDP).
+		Str("tcp", cfg.Listen.TCP).
 		Str("version", version.GetVersion()).
 		Str("build_time", version.GetBuildTime()).
 		Msg("starting DNS servers")
@@ -215,19 +232,19 @@ func (p *Proxy) Start(ctx context.Context) error {
 	// initial pipeline
 	p.rebuildResolver(ctx)
 
-	udpSrv := &dns.Server{Addr: p.cfg.Listen.UDP, Net: "udp"}
-	tcpSrv := &dns.Server{Addr: p.cfg.Listen.TCP, Net: "tcp"}
+	udpSrv := &dns.Server{Addr: cfg.Listen.UDP, Net: "udp"}
+	tcpSrv := &dns.Server{Addr: cfg.Listen.TCP, Net: "tcp"}
 
 	// Check ports availability by attempting to bind before ListenAndServe
 	// UDP
-	if c, err := (&net.ListenConfig{}).ListenPacket(ctx, "udp", p.cfg.Listen.UDP); err != nil {
-		return fmt.Errorf("failed to bind UDP port %s: %w", p.cfg.Listen.UDP, err)
+	if c, err := (&net.ListenConfig{}).ListenPacket(ctx, "udp", cfg.Listen.UDP); err != nil {
+		return fmt.Errorf("failed to bind UDP port %s: %w", cfg.Listen.UDP, err)
 	} else {
 		_ = c.Close()
 	}
 	// TCP
-	if l, err := (&net.ListenConfig{}).Listen(ctx, "tcp", p.cfg.Listen.TCP); err != nil {
-		return fmt.Errorf("failed to bind TCP port %s: %w", p.cfg.Listen.TCP, err)
+	if l, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Listen.TCP); err != nil {
+		return fmt.Errorf("failed to bind TCP port %s: %w", cfg.Listen.TCP, err)
 	} else {
 		_ = l.Close()
 	}
@@ -309,7 +326,7 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 					duration = time.Microsecond
 				}
 
-				p.addHistory(QueryEvent{
+				p.history.AddEvent(QueryEvent{
 					Name:     strings.TrimSuffix(q.Name, "."),
 					QType:    q.Qtype,
 					Upstream: usedUpstream,
@@ -335,7 +352,7 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 				duration = time.Microsecond
 			}
 
-			p.addHistory(QueryEvent{
+			p.history.AddEvent(QueryEvent{
 				Name:     strings.TrimSpace(strings.TrimSuffix(q.Name, ".")),
 				QType:    q.Qtype,
 				Upstream: usedUpstream,
@@ -516,21 +533,28 @@ func minTTL(ttl uint32) uint32 {
 }
 
 // Rules returns the rule store for admin helpers.
-func (p *Proxy) Rules() *RuleStore                 { return p.rules }
-func (p *Proxy) GetRuleGroups() []config.RuleGroup { return p.cfg.GetRuleGroups() }
-func (p *Proxy) GetConfig() *config.Config         { return p.cfg }
+func (p *Proxy) Rules() *RuleStore                 { return p.rules.GetRules() }
+func (p *Proxy) GetRuleGroups() []config.RuleGroup { return p.rules.GetRuleGroups() }
+func (p *Proxy) GetConfig() *config.Config         { return p.config.GetConfig() }
+
+// Cache returns the cache resolver for admin operations.
+func (p *Proxy) Cache() *CachedResolver {
+	if p.cache != nil {
+		return p.cache.GetCache()
+	}
+
+	return nil
+}
 
 // PersistRules writes current rule set back to config file.
 func (p *Proxy) PersistRules() error {
-	p.persistMu.Lock()
-	defer p.persistMu.Unlock()
-
 	// Update rule groups with current rules
 	// This is a simplified approach - in a real implementation,
 	// you might want to preserve the group structure
 	var allRules []config.Rule
 
-	for _, group := range p.cfg.GetRuleGroups() {
+	cfg := p.config.GetConfig()
+	for _, group := range cfg.GetRuleGroups() {
 		for _, pattern := range group.Patterns {
 			allRules = append(allRules, config.Rule{
 				Pattern: pattern,
@@ -540,13 +564,13 @@ func (p *Proxy) PersistRules() error {
 	}
 
 	// For now, we'll put all rules in the first group or create a default group
-	if len(p.cfg.RuleGroups) == 0 {
+	if len(cfg.RuleGroups) == 0 {
 		patterns := make([]string, len(allRules))
 		for i, rule := range allRules {
 			patterns[i] = rule.Pattern
 		}
 
-		p.cfg.RuleGroups = []config.RuleGroup{{
+		cfg.RuleGroups = []config.RuleGroup{{
 			Name:     "Default",
 			Via:      "default",
 			Patterns: patterns,
@@ -557,24 +581,19 @@ func (p *Proxy) PersistRules() error {
 			patterns[i] = rule.Pattern
 		}
 
-		p.cfg.RuleGroups[0].Patterns = patterns
+		cfg.RuleGroups[0].Patterns = patterns
 	}
 
-	return p.cfg.Save()
+	return p.config.SaveConfig()
 }
 
 // GetUpstreams returns upstreams helpers.
 func (p *Proxy) GetUpstreams() []string {
-	p.persistMu.Lock()
-	defer p.persistMu.Unlock()
-
-	return slices.Clone(p.upstreams)
+	return p.upstreams.GetUpstreamAddresses()
 }
 
 // SetUpstreamsConfig replaces upstreams with structured configs and rebuilds pipeline.
 func (p *Proxy) SetUpstreamsConfig(ctx context.Context, ups []config.UpstreamConfig) error {
-	p.persistMu.Lock()
-	defer p.persistMu.Unlock()
 	// 1) Prepare runtime view with detected types and sane weights
 	typed := make([]config.UpstreamConfig, 0, len(ups))
 	for i := range ups {
@@ -590,12 +609,11 @@ func (p *Proxy) SetUpstreamsConfig(ctx context.Context, ups []config.UpstreamCon
 		typed = append(typed, u)
 	}
 
-	// 2) Update runtime resolvers based on the typed slice
-	//    Build legacy string list for resolver pipeline
-	p.upstreams = nil
-	for _, u := range typed {
-		p.upstreams = append(p.upstreams, u.Type+":"+u.Address)
+	// 2) Update upstreams manager
+	if err := p.upstreams.SetUpstreams(typed); err != nil {
+		return err
 	}
+
 	// Rebuild active resolver chain
 	p.rebuildResolver(ctx)
 
@@ -611,9 +629,10 @@ func (p *Proxy) SetUpstreamsConfig(ctx context.Context, ups []config.UpstreamCon
 		})
 	}
 
-	p.cfg.Upstreams = persist
+	cfg := p.config.GetConfig()
+	cfg.Upstreams = persist
 
-	return p.cfg.Save()
+	return p.config.SaveConfig()
 }
 
 // local shim to avoid import cycle; mirrors internal/config.detectType.
@@ -647,26 +666,20 @@ func configDetectType(addr string) string {
 
 // GetHosts returns hosts helpers.
 func (p *Proxy) GetHosts() []config.HostOverride {
-	p.persistMu.Lock()
-	defer p.persistMu.Unlock()
-
-	return slices.Clone(p.cfg.Hosts)
+	return p.hosts.GetHosts()
 }
 
 func (p *Proxy) SetHosts(ctx context.Context, hosts []config.HostOverride) error {
-	p.persistMu.Lock()
-	defer p.persistMu.Unlock()
+	// Update hosts in place without rebuilding resolver pipeline
+	if err := p.hosts.UpdateHostsInPlace(hosts); err != nil {
+		return err
+	}
 
-	p.cfg.Hosts = hosts
-	p.rebuildResolver(ctx)
-
-	return p.cfg.Save()
+	// Save configuration
+	return p.config.SaveConfig()
 }
 
 func (p *Proxy) SetUpstreams(ctx context.Context, us []string) error { //nolint:cyclop
-	p.persistMu.Lock()
-	defer p.persistMu.Unlock()
-
 	// Convert string upstreams to UpstreamConfig
 	upstreams := make([]config.UpstreamConfig, 0, len(us))
 	seen := map[string]struct{}{}
@@ -713,11 +726,19 @@ func (p *Proxy) SetUpstreams(ctx context.Context, us []string) error { //nolint:
 		return errAtLeastOneUpstreamRequired
 	}
 
-	p.cfg.Upstreams = upstreams
-	p.upstreams = p.cfg.GetUpstreamAddresses()
+	// Update upstreams manager
+	if err := p.upstreams.SetUpstreams(upstreams); err != nil {
+		return err
+	}
+
+	// Rebuild active resolver chain
 	p.rebuildResolver(ctx)
 
-	return p.cfg.Save()
+	// Update config
+	cfg := p.config.GetConfig()
+	cfg.Upstreams = upstreams
+
+	return p.config.SaveConfig()
 }
 
 // QueryEvent represents one DNS query record for in-memory history.
@@ -731,60 +752,9 @@ type QueryEvent struct {
 	ClientIP string    `json:"client_ip"`
 }
 
-func (p *Proxy) addHistory(ev QueryEvent) { //nolint:funcorder
-	if p.histCap <= 0 || p.histBuf == nil {
-		return
-	}
-
-	p.histMu.Lock()
-	defer p.histMu.Unlock()
-
-	if p.histCap <= 0 || p.histBuf == nil {
-		return
-	}
-
-	p.histBuf[p.histHead] = ev
-
-	p.histHead++
-	if p.histHead == p.histCap {
-		p.histHead = 0
-	}
-
-	if p.histSize < p.histCap {
-		p.histSize++
-	}
-}
-
 // History returns a copy of last events (newest first).
 func (p *Proxy) History() []QueryEvent {
-	p.histMu.Lock()
-	defer p.histMu.Unlock()
-
-	if p.histBuf == nil || p.histCap <= 0 {
-		return nil
-	}
-
-	n := p.histSize
-	if n == 0 {
-		return nil
-	}
-
-	out := make([]QueryEvent, n)
-
-	idx := (p.histHead - 1 + p.histCap) % p.histCap
-	for i := range n {
-		if idx >= 0 && idx < len(p.histBuf) {
-			out[i] = p.histBuf[idx]
-		}
-
-		if idx == 0 {
-			idx = p.histCap - 1
-		} else {
-			idx--
-		}
-	}
-
-	return out
+	return p.history.GetHistory(0) // 0 means return all
 }
 
 // extractClientIPFromEDNS0 extracts client IP from EDNS0 Client Subnet option.

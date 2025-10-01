@@ -107,8 +107,17 @@ export interface Provider {
   onCache?(cb: (data: CacheListResponse) => void): () => void;
   onCacheUpdated?(cb: () => void): () => void;
   fetchCache?(params?: { offset?: number; limit?: number; q?: string; sort?: string; order?: 'asc' | 'desc' }): Promise<CacheListResponse>;
+  // Generic event listener methods
+  on(event: string, callback: (data: any) => void): void;
+  off(event: string, callback: (data: any) => void): void;
+  // Generic request method
+  request(method: string, url: string, body?: any): Promise<Response>;
   cacheFlush?(): Promise<CacheOpResponse>;
   cacheDelete?(req: CacheDeleteRequest): Promise<CacheOpResponse>;
+  // Local DNS methods
+  fetchLocalZones?(): Promise<string[]>;
+  fetchLocalLeases?(): Promise<any[]>;
+  testLocalResolve?(name: string): Promise<any>;
 }
 
 // API Response types

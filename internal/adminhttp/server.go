@@ -28,6 +28,8 @@ import (
 
 	"github.com/bavix/outway/internal/config"
 	"github.com/bavix/outway/internal/dnsproxy"
+	"github.com/bavix/outway/internal/lanresolver"
+	"github.com/bavix/outway/internal/localzone"
 	"github.com/bavix/outway/internal/metrics"
 	"github.com/bavix/outway/internal/updater"
 	"github.com/bavix/outway/internal/version"
@@ -241,6 +243,7 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
+//nolint:funlen
 func (s *Server) routes() {
 	// API v1 routes
 	api := s.mux.PathPrefix("/api/v1").Subrouter()
@@ -254,6 +257,49 @@ func (s *Server) routes() {
 
 	// Hosts management
 	api.HandleFunc("/hosts", s.handleHosts).Methods("GET", "PUT")
+
+	// Local DNS management - always register API endpoints
+	// Initialize local zones handler with auto-detection
+	zoneDetector := localzone.NewZoneDetector()
+	leaseManager := lanresolver.NewLeaseManager("/tmp/dhcp.leases")
+
+	// Load initial leases (always enabled)
+	if err := leaseManager.LoadLeases(); err != nil {
+		// Log warning but continue
+		zerolog.Ctx(context.Background()).Warn().Err(err).Msg("Failed to load initial DHCP leases")
+	}
+
+	// Create LAN resolver (we'll need to get this from the proxy somehow)
+	// For now, we'll create a temporary one for the handler
+	lanResolver := lanresolver.NewLANResolver(nil, zoneDetector, leaseManager)
+
+	// Create local handler first
+	localHandler := NewLocalZonesHandler(zoneDetector, leaseManager, lanResolver, nil)
+
+	// Start file watching (always enabled)
+	// Create manager for file watching with callback
+	manager := lanresolver.NewManager(zoneDetector, leaseManager, func() {
+		// Callback for file changes - broadcast updates to WebSocket clients
+		localHandler.BroadcastUpdate()
+	})
+
+	// Update handler with manager
+	localHandler.manager = manager
+
+	// Start file watching
+	watchPaths := []string{
+		"/tmp/dhcp.leases",                 // DHCP leases
+		"/etc/config/dhcp",                 // UCI config
+		"/tmp/resolv.conf.auto",            // OpenWrt resolv.conf
+		"/etc/resolv.conf",                 // Linux resolv.conf
+		"/run/systemd/resolve/resolv.conf", // systemd-resolved
+	}
+	if err := manager.Start(context.Background(), watchPaths); err != nil {
+		zerolog.Ctx(context.Background()).Warn().Err(err).Msg("Failed to start file watcher")
+	}
+
+	// Always register API routes
+	localHandler.RegisterRoutes(s.mux)
 
 	// Statistics and monitoring
 	api.HandleFunc("/stats", s.handleStats).Methods("GET")
@@ -1429,7 +1475,7 @@ func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(s.startTime)
 
-	status := map[string]interface{}{
+	status := map[string]any{
 		"current_version": s.version,
 		"build_time":      s.buildTime,
 		"uptime":          formatDuration(uptime),
