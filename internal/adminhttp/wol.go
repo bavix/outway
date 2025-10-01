@@ -145,10 +145,10 @@ func (h *WOLHandler) handleSendWOL(w http.ResponseWriter, r *http.Request) {
 		found := false
 		for _, iface := range interfaces {
 			if iface.Name == req.Interface {
+				found = true
 				err = h.client.SendWOL(req.MAC, iface.Broadcast, req.Port)
 				if err == nil {
 					sentTo = append(sentTo, iface.Name)
-					found = true
 				}
 				break
 			}
