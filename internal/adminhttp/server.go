@@ -33,6 +33,7 @@ import (
 	"github.com/bavix/outway/internal/metrics"
 	"github.com/bavix/outway/internal/updater"
 	"github.com/bavix/outway/internal/version"
+	"github.com/bavix/outway/internal/wol"
 	"github.com/bavix/outway/ui"
 )
 
@@ -298,6 +299,13 @@ func (s *Server) routes() {
 
 	// Always register API routes
 	localHandler.RegisterRoutes(s.mux)
+
+	// Wake-on-LAN management
+	wolHandler := NewWOLHandler(wol.NewClient(nil))
+	api.HandleFunc("/wol/interfaces", wolHandler.handleGetInterfaces).Methods("GET")
+	api.HandleFunc("/wol/config", wolHandler.handleGetConfig).Methods("GET")
+	api.HandleFunc("/wol/config", wolHandler.handleUpdateConfig).Methods("PUT")
+	api.HandleFunc("/wol/send", wolHandler.handleSendWOL).Methods("POST")
 
 	// Statistics and monitoring
 	api.HandleFunc("/stats", s.handleStats).Methods("GET")
