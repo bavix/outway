@@ -6,7 +6,7 @@ import "github.com/miekg/dns"
 type DoHStrategy struct{}
 
 func (DoHStrategy) Supports(t string) bool { return t == "doh" }
-func (DoHStrategy) NewResolver(t, address string, deps StrategyDeps) Resolver { //nolint:ireturn
+func (DoHStrategy) NewResolver(t, address string, deps StrategyDeps) *UpstreamResolver {
 	exch := func(m *dns.Msg, url string) (*dns.Msg, error) { return deps.ExchangeDoH(m, url) }
 
 	return &UpstreamResolver{network: t, address: address, exchange: exch}

@@ -5,7 +5,7 @@ listen:
 upstreams:
 - name: cloudflare-doh
   address: https://cloudflare-dns.com/dns-query
-  weight: 1
+  weight: 100
 - name: cf-ipv4
   address: udp://1.1.1.1:53
   weight: 1

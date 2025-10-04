@@ -14,7 +14,16 @@ import {
   CacheDeleteRequest,
   CacheOpResponse,
   CacheListResponse,
-  CacheKeyDetails
+  CacheKeyDetails,
+  WOLDevicesResponse,
+  WOLInterfacesResponse,
+  WOLConfig,
+  WOLDevice,
+  Device,
+  DevicesResponse,
+  DeviceStats,
+  DeviceWakeRequest,
+  DeviceWakeResponse
 } from './types.js';
 
 export class RESTProvider implements Provider {
@@ -336,5 +345,120 @@ export class RESTProvider implements Provider {
   async testLocalResolve(name: string): Promise<any> {
     const params = new URLSearchParams({ name });
     return this.fetchJSON<any>(`/api/v1/local/resolve?${params.toString()}`);
+  }
+
+  // Wake-on-LAN methods
+  async fetchWOLDevices(): Promise<WOLDevicesResponse> {
+    return this.fetchJSON<WOLDevicesResponse>('/api/v1/wol/devices');
+  }
+
+  async fetchWOLInterfaces(): Promise<WOLInterfacesResponse> {
+    return this.fetchJSON<WOLInterfacesResponse>('/api/v1/wol/interfaces');
+  }
+
+  async fetchWOLConfig(): Promise<WOLConfig> {
+    return this.fetchJSON<WOLConfig>('/api/v1/wol/config');
+  }
+
+  async updateWOLConfig(config: Partial<WOLConfig>): Promise<void> {
+    await this.fetchJSON('/api/v1/wol/config', {
+      method: 'PUT',
+      body: JSON.stringify(config)
+    });
+  }
+
+
+  async scanWOLDevices(): Promise<WOLDevicesResponse> {
+    return this.fetchJSON<WOLDevicesResponse>('/api/v1/wol/devices/scan');
+  }
+
+  async addWOLDevice(device: { name: string; mac: string; ip: string; hostname?: string; vendor?: string }): Promise<WOLDevice> {
+    return this.fetchJSON<WOLDevice>('/api/v1/wol/devices/add', {
+      method: 'POST',
+      body: JSON.stringify(device)
+    });
+  }
+
+  async updateWOLDevice(id: string, device: { name: string; mac: string; ip: string; hostname?: string; vendor?: string; status?: string }): Promise<void> {
+    await this.fetchJSON(`/api/v1/wol/devices/update?id=${id}`, {
+      method: 'POST',
+      body: JSON.stringify(device)
+    });
+  }
+
+  async deleteWOLDevice(id: string): Promise<void> {
+    await this.fetchJSON(`/api/v1/wol/devices/delete?id=${id}`, {
+      method: 'POST'
+    });
+  }
+
+  // Devices API methods
+  async fetchDevices(): Promise<DevicesResponse> {
+    return this.fetchJSON('/api/v1/devices');
+  }
+
+  async fetchDevice(id: string): Promise<Device> {
+    return this.fetchJSON(`/api/v1/devices/${id}`);
+  }
+
+  async addDevice(device: { name: string; mac: string; ip: string; hostname?: string; vendor?: string }): Promise<Device> {
+    return this.fetchJSON('/api/v1/devices', {
+      method: 'POST',
+      body: JSON.stringify(device)
+    });
+  }
+
+  async updateDevice(id: string, device: { name?: string; mac?: string; ip?: string; hostname?: string; vendor?: string; status?: string }): Promise<void> {
+    await this.fetchJSON(`/api/v1/devices/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(device)
+    });
+  }
+
+  async deleteDevice(id: string): Promise<void> {
+    await this.fetchJSON(`/api/v1/devices/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async fetchDevicesByType(type: string): Promise<DevicesResponse> {
+    return this.fetchJSON(`/api/v1/devices/type/${type}`);
+  }
+
+  async fetchOnlineDevices(): Promise<DevicesResponse> {
+    return this.fetchJSON('/api/v1/devices/online');
+  }
+
+  async fetchWakeableDevices(): Promise<DevicesResponse> {
+    return this.fetchJSON('/api/v1/devices/wakeable');
+  }
+
+  async fetchResolvableDevices(): Promise<DevicesResponse> {
+    return this.fetchJSON('/api/v1/devices/resolvable');
+  }
+
+  async scanDevices(): Promise<DevicesResponse> {
+    return this.fetchJSON('/api/v1/devices/scan');
+  }
+
+  async fetchDeviceStats(): Promise<DeviceStats> {
+    return this.fetchJSON('/api/v1/devices/stats');
+  }
+
+  async wakeDevice(request: DeviceWakeRequest): Promise<DeviceWakeResponse> {
+    return this.fetchJSON(`/api/v1/devices/${request.id}/wake`, {
+      method: 'POST',
+      body: JSON.stringify(request)
+    });
+  }
+
+  async wakeAllDevices(): Promise<DeviceWakeResponse[]> {
+    return this.fetchJSON('/api/v1/devices/wake-all', {
+      method: 'POST'
+    });
+  }
+
+  async resolveDevice(id: string): Promise<ResolveResult> {
+    return this.fetchJSON(`/api/v1/devices/${id}/resolve`);
   }
 }

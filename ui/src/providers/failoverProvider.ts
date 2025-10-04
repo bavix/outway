@@ -1,4 +1,4 @@
-import { Provider, RuleGroup, Stats, QueryEvent, ServerInfo, HostOverride, ResolveResult, UpstreamItem, OverviewData, CacheDeleteRequest, CacheOpResponse, CacheListResponse } from './types.js';
+import { Provider, RuleGroup, Stats, QueryEvent, ServerInfo, HostOverride, ResolveResult, UpstreamItem, OverviewData, CacheDeleteRequest, CacheOpResponse, CacheListResponse, WOLDevicesResponse, WOLInterfacesResponse, WOLConfig, WOLDevice, Device, DevicesResponse, DeviceStats, DeviceWakeRequest, DeviceWakeResponse } from './types.js';
 import { WSProvider } from './wsProvider.js';
 import { RESTProvider } from './restProvider.js';
 
@@ -386,5 +386,96 @@ export class FailoverProvider implements Provider {
 
   async testLocalResolve(name: string): Promise<any> {
     return this.restProvider.testLocalResolve(name);
+  }
+
+  // Wake-on-LAN methods
+  async fetchWOLDevices(): Promise<WOLDevicesResponse> {
+    return this.restProvider.fetchWOLDevices();
+  }
+
+  async fetchWOLInterfaces(): Promise<WOLInterfacesResponse> {
+    return this.restProvider.fetchWOLInterfaces();
+  }
+
+  async fetchWOLConfig(): Promise<WOLConfig> {
+    return this.restProvider.fetchWOLConfig();
+  }
+
+  async updateWOLConfig(config: Partial<WOLConfig>): Promise<void> {
+    return this.restProvider.updateWOLConfig(config);
+  }
+
+
+  async scanWOLDevices(): Promise<WOLDevicesResponse> {
+    return this.restProvider.scanWOLDevices();
+  }
+
+  async addWOLDevice(device: { name: string; mac: string; ip: string; hostname?: string; vendor?: string }): Promise<WOLDevice> {
+    return this.restProvider.addWOLDevice(device);
+  }
+
+  async updateWOLDevice(id: string, device: { name: string; mac: string; ip: string; hostname?: string; vendor?: string; status?: string }): Promise<void> {
+    return this.restProvider.updateWOLDevice(id, device);
+  }
+
+  async deleteWOLDevice(id: string): Promise<void> {
+    return this.restProvider.deleteWOLDevice(id);
+  }
+
+  // Devices API methods
+  async fetchDevices(): Promise<DevicesResponse> {
+    return this.restProvider.fetchDevices();
+  }
+
+  async fetchDevice(id: string): Promise<Device> {
+    return this.restProvider.fetchDevice(id);
+  }
+
+  async addDevice(device: { name: string; mac: string; ip: string; hostname?: string; vendor?: string }): Promise<Device> {
+    return this.restProvider.addDevice(device);
+  }
+
+  async updateDevice(id: string, device: { name?: string; mac?: string; ip?: string; hostname?: string; vendor?: string; status?: string }): Promise<void> {
+    return this.restProvider.updateDevice(id, device);
+  }
+
+  async deleteDevice(id: string): Promise<void> {
+    return this.restProvider.deleteDevice(id);
+  }
+
+  async fetchDevicesByType(type: string): Promise<DevicesResponse> {
+    return this.restProvider.fetchDevicesByType(type);
+  }
+
+  async fetchOnlineDevices(): Promise<DevicesResponse> {
+    return this.restProvider.fetchOnlineDevices();
+  }
+
+  async fetchWakeableDevices(): Promise<DevicesResponse> {
+    return this.restProvider.fetchWakeableDevices();
+  }
+
+  async fetchResolvableDevices(): Promise<DevicesResponse> {
+    return this.restProvider.fetchResolvableDevices();
+  }
+
+  async scanDevices(): Promise<DevicesResponse> {
+    return this.restProvider.scanDevices();
+  }
+
+  async fetchDeviceStats(): Promise<DeviceStats> {
+    return this.restProvider.fetchDeviceStats();
+  }
+
+  async wakeDevice(request: DeviceWakeRequest): Promise<DeviceWakeResponse> {
+    return this.restProvider.wakeDevice(request);
+  }
+
+  async wakeAllDevices(): Promise<DeviceWakeResponse[]> {
+    return this.restProvider.wakeAllDevices();
+  }
+
+  async resolveDevice(id: string): Promise<ResolveResult> {
+    return this.restProvider.resolveDevice(id);
   }
 }

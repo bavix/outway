@@ -118,6 +118,30 @@ export interface Provider {
   fetchLocalZones?(): Promise<string[]>;
   fetchLocalLeases?(): Promise<any[]>;
   testLocalResolve?(name: string): Promise<any>;
+  // Wake-on-LAN methods
+  fetchWOLDevices?(): Promise<WOLDevicesResponse>;
+  fetchWOLInterfaces?(): Promise<WOLInterfacesResponse>;
+  fetchWOLConfig?(): Promise<WOLConfig>;
+  updateWOLConfig?(config: Partial<WOLConfig>): Promise<void>;
+  scanWOLDevices?(): Promise<WOLDevicesResponse>;
+  addWOLDevice?(device: { name: string; mac: string; ip: string; hostname?: string; vendor?: string }): Promise<WOLDevice>;
+  updateWOLDevice?(id: string, device: { name: string; mac: string; ip: string; hostname?: string; vendor?: string; status?: string }): Promise<void>;
+  deleteWOLDevice?(id: string): Promise<void>;
+  // Devices API methods
+  fetchDevices?(): Promise<DevicesResponse>;
+  fetchDevice?(id: string): Promise<Device>;
+  addDevice?(device: { name: string; mac: string; ip: string; hostname?: string; vendor?: string }): Promise<Device>;
+  updateDevice?(id: string, device: { name?: string; mac?: string; ip?: string; hostname?: string; vendor?: string; status?: string }): Promise<void>;
+  deleteDevice?(id: string): Promise<void>;
+  fetchDevicesByType?(type: string): Promise<DevicesResponse>;
+  fetchOnlineDevices?(): Promise<DevicesResponse>;
+  fetchWakeableDevices?(): Promise<DevicesResponse>;
+  fetchResolvableDevices?(): Promise<DevicesResponse>;
+  scanDevices?(): Promise<DevicesResponse>;
+  fetchDeviceStats?(): Promise<DeviceStats>;
+  wakeDevice?(request: DeviceWakeRequest): Promise<DeviceWakeResponse>;
+  wakeAllDevices?(): Promise<DeviceWakeResponse[]>;
+  resolveDevice?(id: string): Promise<ResolveResult>;
 }
 
 // API Response types
@@ -203,4 +227,111 @@ export interface CacheKeyDetails {
   key: string;
   answers: string[];
   rcode: number;
+}
+
+// Device types (unified)
+export interface Device {
+  id: string;
+  name: string;
+  mac: string;
+  ip: string;
+  hostname: string;
+  vendor: string;
+  status: 'online' | 'offline' | 'unknown';
+  source: 'dhcp' | 'manual' | 'scan';
+  device_type: 'computer' | 'phone' | 'router' | 'tv' | 'smart_home' | 'unknown';
+  capabilities: {
+    can_wake: boolean;
+    can_resolve: boolean;
+  };
+  created_at: string;
+  updated_at: string;
+  last_seen: string;
+}
+
+// Wake-on-LAN types (legacy compatibility)
+export interface WOLDevice {
+  id: string;
+  name: string;
+  mac: string;
+  ip: string;
+  lastSeen: string;
+  status: 'online' | 'offline' | 'unknown';
+  vendor?: string;
+  hostname?: string;
+  can_wake?: boolean;
+}
+
+export interface WOLNetworkInterface {
+  name: string;
+  index: number;
+  mtu: number;
+  hardware_addr: string;
+  ips: string[];
+  broadcast: string;
+  is_up: boolean;
+  is_loopback: boolean;
+}
+
+export interface WOLConfig {
+  enabled: boolean;
+  default_port: number;
+  default_timeout: number;
+  retry_count: number;
+  retry_delay: number;
+}
+
+export interface WOLWakeRequest {
+  mac: string;
+  hostname?: string;
+  port?: number;
+  timeout?: number;
+  interface?: string;
+}
+
+export interface WOLWakeResponse {
+  success: boolean;
+  message: string;
+  mac: string;
+  interface?: string;
+  sent_at: string;
+  duration_ms: number;
+}
+
+export interface WOLDevicesResponse {
+  devices: WOLDevice[];
+  count: number;
+}
+
+export interface WOLInterfacesResponse {
+  interfaces: WOLNetworkInterface[];
+  count: number;
+}
+
+// Devices API types
+export interface DevicesResponse {
+  devices: Device[];
+  count: number;
+}
+
+export interface DeviceStats {
+  total: number;
+  online: number;
+  offline: number;
+  by_type: Record<string, number>;
+  by_source: Record<string, number>;
+}
+
+export interface DeviceWakeRequest {
+  id: string;
+  interface?: string;
+}
+
+export interface DeviceWakeResponse {
+  success: boolean;
+  message: string;
+  device_id: string;
+  interface?: string;
+  sent_at: string;
+  duration_ms: number;
 }

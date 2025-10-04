@@ -167,7 +167,9 @@ type Proxy struct {
 }
 
 // ResolverActive returns the current active resolver atomically.
-func (p *Proxy) ResolverActive() Resolver { //nolint:ireturn
+//
+//nolint:ireturn
+func (p *Proxy) ResolverActive() Resolver {
 	if v := p.active.Load(); v != nil {
 		if r, ok := v.(Resolver); ok {
 			return r

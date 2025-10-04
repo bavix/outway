@@ -19,7 +19,7 @@ const (
 type DotStrategy struct{}
 
 func (DotStrategy) Supports(t string) bool { return t == protocolDot }
-func (DotStrategy) NewResolver(t, address string, deps StrategyDeps) Resolver { //nolint:ireturn
+func (DotStrategy) NewResolver(t, address string, deps StrategyDeps) *UpstreamResolver {
 	host := address
 	// Strip scheme if accidentally present
 	if strings.HasPrefix(host, "tls://") || strings.HasPrefix(host, "dot://") {

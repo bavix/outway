@@ -87,12 +87,13 @@ func runUpdateCommand(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return performUpdate(ctx, *log, u, updateInfo)
+	return performUpdate(ctx, u, updateInfo)
 }
 
 // performUpdate handles the update process.
-func performUpdate(ctx context.Context, log zerolog.Logger, u *updater.Updater, updateInfo *updater.UpdateInfo) error {
-	logUpdateInfo(log, updateInfo)
+func performUpdate(ctx context.Context, u *updater.Updater, updateInfo *updater.UpdateInfo) error {
+	log := zerolog.Ctx(ctx)
+	logUpdateInfo(ctx, updateInfo)
 
 	// Find appropriate asset for current platform
 	asset := FindAssetForPlatform(updateInfo.Release.Assets, runtime.GOOS+"/"+runtime.GOARCH)
@@ -104,11 +105,12 @@ func performUpdate(ctx context.Context, log zerolog.Logger, u *updater.Updater, 
 		return fmt.Errorf("%w %s/%s", errNoSuitableAsset, runtime.GOOS, runtime.GOARCH)
 	}
 
-	return downloadAndInstallUpdate(ctx, log, u, asset)
+	return downloadAndInstallUpdate(ctx, u, asset)
 }
 
 // logUpdateInfo logs information about the available update.
-func logUpdateInfo(log zerolog.Logger, updateInfo *updater.UpdateInfo) {
+func logUpdateInfo(ctx context.Context, updateInfo *updater.UpdateInfo) {
+	log := zerolog.Ctx(ctx)
 	log.Info().Msg("Update available")
 	log.Info().Str("current_version", updateInfo.CurrentVersion).Msg("current version")
 	log.Info().Str("latest_version", updateInfo.LatestVersion).Msg("latest version")
@@ -123,7 +125,8 @@ func logUpdateInfo(log zerolog.Logger, updateInfo *updater.UpdateInfo) {
 }
 
 // downloadAndInstallUpdate downloads and installs the update.
-func downloadAndInstallUpdate(ctx context.Context, log zerolog.Logger, u *updater.Updater, asset *updater.Asset) error {
+func downloadAndInstallUpdate(ctx context.Context, u *updater.Updater, asset *updater.Asset) error {
+	log := zerolog.Ctx(ctx)
 	log.Info().Str("asset_name", asset.Name).Msg("downloading")
 	log.Info().Str("size", FormatFileSize(asset.Size)).Msg("file size")
 

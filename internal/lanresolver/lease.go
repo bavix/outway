@@ -56,6 +56,25 @@ func NewLeaseManagerWithReader(leasesPath string, fileReader FileReader) *LeaseM
 	}
 }
 
+// SetLeaseFile updates the lease file path and reloads leases.
+func (lm *LeaseManager) SetLeaseFile(leasesPath string) {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+
+	lm.leasesPath = leasesPath
+	// Clear existing leases
+	lm.leases = make(map[string]*Lease)
+
+	// Reload leases from new file (without holding the lock)
+	lm.mu.Unlock()
+	err := lm.LoadLeases()
+	lm.mu.Lock()
+
+	// Ignore error - file might not exist yet
+	// This is expected for OpenWrt and other systems
+	_ = err
+}
+
 // LoadLeases loads leases from the DHCP leases file.
 func (lm *LeaseManager) LoadLeases() error {
 	lm.mu.Lock()

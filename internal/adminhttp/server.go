@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/bavix/outway/internal/config"
+	"github.com/bavix/outway/internal/devices"
 	"github.com/bavix/outway/internal/dnsproxy"
 	"github.com/bavix/outway/internal/lanresolver"
 	"github.com/bavix/outway/internal/localzone"
@@ -63,25 +64,27 @@ const (
 )
 
 type Server struct {
-	addr      string
-	mux       *mux.Router
-	proxy     *dnsproxy.Proxy
-	updater   *updater.Updater
-	wsMu      sync.RWMutex // protects conns map (read for iteration, write for add/remove)
-	wsWriteMu sync.Mutex   // protects WebSocket writes (WriteJSON is not a "read" operation)
-	conns     map[*websocket.Conn]struct{}
-	startTime time.Time
-	version   string
-	buildTime string
-	adminPort int
-	dnsPort   string
+	addr          string
+	mux           *mux.Router
+	proxy         *dnsproxy.Proxy
+	updater       *updater.Updater
+	deviceManager *devices.DeviceManager
+	wsMu          sync.RWMutex // protects conns map (read for iteration, write for add/remove)
+	wsWriteMu     sync.Mutex   // protects WebSocket writes (WriteJSON is not a "read" operation)
+	conns         map[*websocket.Conn]struct{}
+	startTime     time.Time
+	version       string
+	buildTime     string
+	adminPort     int
+	dnsPort       string
 }
 
 func NewServer(addr string, proxy *dnsproxy.Proxy) *Server {
 	s := &Server{
-		addr:  addr,
-		mux:   mux.NewRouter(),
-		proxy: proxy,
+		addr:          addr,
+		mux:           mux.NewRouter(),
+		proxy:         proxy,
+		deviceManager: devices.NewDeviceManager(),
 		updater: func() *updater.Updater {
 			u, err := updater.New(updater.Config{
 				Owner:          "bavix",
@@ -124,9 +127,10 @@ func NewServer(addr string, proxy *dnsproxy.Proxy) *Server {
 
 func NewServerWithConfig(httpConfig *config.HTTPConfig, proxy *dnsproxy.Proxy) *Server {
 	s := &Server{
-		addr:  httpConfig.Listen,
-		mux:   mux.NewRouter(),
-		proxy: proxy,
+		addr:          httpConfig.Listen,
+		mux:           mux.NewRouter(),
+		proxy:         proxy,
+		deviceManager: devices.NewDeviceManager(),
 		updater: func() *updater.Updater {
 			u, err := updater.New(updater.Config{
 				Owner:          "bavix",
@@ -298,6 +302,10 @@ func (s *Server) routes() {
 
 	// Always register API routes
 	localHandler.RegisterRoutes(s.mux)
+
+	// Register devices API routes
+	devicesAPIHandler := devices.NewAPIHandler(s.deviceManager)
+	devicesAPIHandler.RegisterRoutes(s.mux)
 
 	// Statistics and monitoring
 	api.HandleFunc("/stats", s.handleStats).Methods("GET")
@@ -948,6 +956,8 @@ func (s *Server) handleCacheFlush(w http.ResponseWriter, r *http.Request) {
 		}
 	case *dnsproxy.CachedResolver:
 		v.Flush()
+	case *dnsproxy.UpstreamResolver:
+		// UpstreamResolver doesn't have cache, nothing to flush
 	}
 
 	render.Status(r, http.StatusOK)
@@ -999,6 +1009,8 @@ func (s *Server) handleCacheDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	case *dnsproxy.CachedResolver:
 		deleteFn = v.Delete
+	case *dnsproxy.UpstreamResolver:
+		// UpstreamResolver doesn't have cache, nothing to delete
 	}
 
 	if deleteFn == nil {
@@ -1043,6 +1055,8 @@ func (s *Server) handleCacheDeleteKey(w http.ResponseWriter, r *http.Request) {
 		}
 	case *dnsproxy.CachedResolver:
 		v.DeleteKey(key)
+	case *dnsproxy.UpstreamResolver:
+		// UpstreamResolver doesn't have cache, nothing to delete
 	}
 
 	s.broadcastCacheSnapshot(r.Context())
@@ -1085,6 +1099,8 @@ func (s *Server) handleCacheGetKey(w http.ResponseWriter, r *http.Request) {
 		}
 	case *dnsproxy.CachedResolver:
 		msg, ok = v.Get(key)
+	case *dnsproxy.UpstreamResolver:
+		// UpstreamResolver doesn't have cache, nothing to get
 	}
 
 	if !ok || msg == nil {
@@ -1134,6 +1150,9 @@ func (s *Server) handleCacheList(w http.ResponseWriter, r *http.Request) {
 	case *dnsproxy.CachedResolver:
 		it, t := v.List(offset, limit, q, sortBy, order)
 		items, total = it, t
+	case *dnsproxy.UpstreamResolver:
+		// UpstreamResolver doesn't have cache, return empty list
+		items, total = []any{}, 0
 	}
 
 	if items == nil {
@@ -1175,6 +1194,9 @@ func (s *Server) broadcastCacheSnapshot(_ context.Context) {
 		}
 	case *dnsproxy.CachedResolver:
 		items, total = v.List(offset, limit, q, "expires", "desc")
+	case *dnsproxy.UpstreamResolver:
+		// UpstreamResolver doesn't have cache, return empty list
+		items, total = []any{}, 0
 	}
 
 	if items == nil {
@@ -1359,6 +1381,11 @@ func (s *Server) createServer(ctx context.Context, handler http.Handler) *http.S
 		// graceful shutdown with timeout, then force close
 		shutdownCtx, cancel := context.WithTimeout(ctx, defaultShutdownTimeout)
 		defer cancel()
+
+		// Close device manager
+		if s.deviceManager != nil {
+			_ = s.deviceManager.Close()
+		}
 
 		srv.SetKeepAlivesEnabled(false)
 		_ = srv.Shutdown(shutdownCtx)
