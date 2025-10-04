@@ -178,7 +178,13 @@ func (d *InterfaceDetector) IsValidBroadcastAddress(ctx context.Context, addr st
 		return true
 	}
 
-	// Check if it's a network broadcast address
+	// Check if it's a potential broadcast address (ends with .255 for IPv4)
+	parts := strings.Split(addr, ".")
+	if len(parts) == 4 && parts[3] == "255" {
+		return true
+	}
+
+	// Check if it's a network broadcast address for any interface
 	interfaces, err := d.DetectInterfaces(ctx)
 	if err != nil {
 		return false

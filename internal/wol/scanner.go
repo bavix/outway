@@ -76,6 +76,11 @@ func (ns *NetworkScanner) ScanNetwork(ctx context.Context, networkCIDR string) (
 		results = ns.scanBasic(ctx, ipNet)
 	}
 
+	// Return empty slice instead of nil if no results found
+	if results == nil {
+		results = []*ScanResult{}
+	}
+
 	return results, nil
 }
 

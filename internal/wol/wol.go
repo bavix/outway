@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -364,7 +365,7 @@ func (w *WakeOnLan) createMagicPacket(mac string) ([]byte, error) {
 // sendPacket sends the magic packet via UDP.
 func (w *WakeOnLan) sendPacket(ctx context.Context, packet []byte, ip string, port int) error {
 	// Resolve UDP address
-	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, port))
+	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(ip, strconv.Itoa(port)))
 	if err != nil {
 		return fmt.Errorf("failed to resolve address: %w", err)
 	}
