@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -24,15 +25,6 @@ const (
 // DeviceType represents the type of a network device.
 type DeviceType string
 
-const (
-	DeviceTypeComputer DeviceType = "computer"
-	DeviceTypePhone    DeviceType = "phone"
-	DeviceTypeTablet   DeviceType = "tablet"
-	DeviceTypeRouter   DeviceType = "router"
-	DeviceTypeTV       DeviceType = "tv"
-	DeviceTypeOther    DeviceType = "other"
-)
-
 // Device represents a network device with DNS and WOL capabilities.
 type Device struct {
 	ID        string     `json:"id"`
@@ -42,12 +34,31 @@ type Device struct {
 	Hostname  string     `json:"hostname"`
 	Vendor    string     `json:"vendor"`
 	Type      DeviceType `json:"type"`
-	Status    string     `json:"status"` // online, offline, unknown
+	Status    string     `json:"status"` // StatusOnline, StatusOffline, StatusUnknown
 	LastSeen  time.Time  `json:"last_seen"`
-	Source    string     `json:"source"` // dhcp, scan, manual
-	Expire    time.Time  `json:"expire"` // lease expiration
+	Source    string     `json:"source"`           // dhcp, scan, manual
+	Expire    *time.Time `json:"expire,omitempty"` // lease expiration
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+// Clone creates a deep copy of the device.
+func (d *Device) Clone() *Device {
+	return &Device{
+		ID:        d.ID,
+		Name:      d.Name,
+		MAC:       d.MAC,
+		IP:        d.IP,
+		Hostname:  d.Hostname,
+		Vendor:    d.Vendor,
+		Type:      d.Type,
+		Status:    d.Status,
+		LastSeen:  d.LastSeen,
+		Source:    d.Source,
+		Expire:    d.Expire,
+		CreatedAt: d.CreatedAt,
+		UpdatedAt: d.UpdatedAt,
+	}
 }
 
 // FileWatcher is a placeholder for file watching functionality.
@@ -90,8 +101,9 @@ func (d *Device) IsOnline() bool {
 }
 
 // CanBeWoken checks if the device can be woken up.
+// We can only wake devices that have a valid MAC address.
 func (d *Device) CanBeWoken() bool {
-	return d.MAC != "" && d.Status == "offline"
+	return d.MAC != "" && d.IsValidMAC()
 }
 
 // CanBeResolved checks if the device can be resolved via DNS.
@@ -203,11 +215,37 @@ type DeviceManager struct {
 	lastScan     time.Time
 }
 
+// GetCommonLeasePaths returns common DHCP lease file paths.
+func GetCommonLeasePaths() []string {
+	return []string{
+		"/tmp/dhcp.leases",                    // OpenWrt
+		"/var/lib/dhcp/dhcpd.leases",          // ISC DHCP
+		"/var/lib/dhcp/dhcp.leases",           // ISC DHCP alternative
+		"/var/lib/dhcpcd/dhcpcd.leases",       // dhcpcd
+		"/var/lib/NetworkManager/dhcp.leases", // NetworkManager
+	}
+}
+
+// detectDHCPLeasePath automatically detects the best DHCP lease file path.
+func detectDHCPLeasePath() string {
+	paths := GetCommonLeasePaths()
+
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	// Default to OpenWrt path if no file found
+	return "/tmp/dhcp.leases"
+}
+
 // NewDeviceManager creates a new device manager with automatic configuration.
 func NewDeviceManager() *DeviceManager {
 	// Create components with automatic configuration
 	zoneDetector := localzone.NewZoneDetector()
-	leaseManager := lanresolver.NewLeaseManager("/tmp/test_leases") // Use temp directory for tests
+	leasePath := detectDHCPLeasePath()
+	leaseManager := lanresolver.NewLeaseManager(leasePath)
 	wolService := wol.NewWakeOnLan()
 	scanner := wol.NewNetworkScanner()
 
@@ -222,13 +260,12 @@ func NewDeviceManager() *DeviceManager {
 	}
 
 	// Debug: check if dm is properly initialized
-
 	if dm.devices == nil {
 		panic("dm.devices is nil")
 	}
 
-	// Load initial devices from DHCP leases
-	dm.loadFromDHCPLeases()
+	// Note: Initial DHCP lease loading is deferred to first use
+	// This avoids creating context.Background() in constructor
 
 	// File watcher is disabled by default to avoid resource leaks
 	// It can be enabled manually if needed
@@ -245,6 +282,8 @@ func NewDeviceManager() *DeviceManager {
 }
 
 // GetAllDevices returns all managed devices.
+// Note: This method doesn't load DHCP leases automatically.
+// Use ScanNetwork() or RefreshDHCPLeases() to load data first.
 func (dm *DeviceManager) GetAllDevices() []*Device {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
@@ -262,6 +301,9 @@ func (dm *DeviceManager) ScanNetwork(ctx context.Context) ([]*Device, error) {
 	if dm.scanner == nil {
 		return nil, customerrors.ErrNetworkScannerNotInitialized
 	}
+
+	// Update DHCP leases first
+	dm.loadFromDHCPLeases(ctx)
 
 	// Get local network CIDR
 	networkCIDR, err := dm.scanner.GetLocalNetworkCIDR()
@@ -421,7 +463,7 @@ func (dm *DeviceManager) ScanDevices(ctx context.Context) ([]*Device, error) {
 	if err != nil {
 		logger.Warn().Err(err).Msg("Failed to get local network, using DHCP only")
 
-		return dm.loadFromDHCPLeases(), nil
+		return dm.loadFromDHCPLeases(ctx), nil
 	}
 
 	logger.Info().
@@ -436,14 +478,14 @@ func (dm *DeviceManager) ScanDevices(ctx context.Context) ([]*Device, error) {
 	if err != nil {
 		logger.Warn().Err(err).Msg("Network scan failed, using DHCP only")
 
-		return dm.loadFromDHCPLeases(), nil
+		return dm.loadFromDHCPLeases(ctx), nil
 	}
 
 	// Update devices from scan results
 	updatedDevices := dm.updateFromScanResults(scanResults)
 
 	// Also load from DHCP leases for devices not found in scan
-	dhcpDevices := dm.loadFromDHCPLeases()
+	dhcpDevices := dm.loadFromDHCPLeases(ctx)
 
 	// Merge results
 	allDevices := make([]*Device, 0, len(updatedDevices)+len(dhcpDevices))
@@ -675,6 +717,22 @@ func (dm *DeviceManager) EnableFileWatcherAuto() error {
 	return customerrors.ErrFileWatcherNotImplemented
 }
 
+// RefreshDHCPLeases refreshes DHCP leases from file.
+func (dm *DeviceManager) RefreshDHCPLeases(ctx context.Context) error {
+	if dm.leaseManager == nil {
+		return customerrors.ErrLeaseManagerNotInitialized
+	}
+
+	if err := dm.leaseManager.LoadLeases(); err != nil {
+		return fmt.Errorf("failed to load DHCP leases: %w", err)
+	}
+
+	// Reload devices from updated leases
+	dm.loadFromDHCPLeases(ctx)
+
+	return nil
+}
+
 // Close closes the device manager and cleans up resources.
 func (dm *DeviceManager) Close() error {
 	if dm.fileWatcher != nil {
@@ -684,12 +742,29 @@ func (dm *DeviceManager) Close() error {
 	return nil
 }
 
-func (dm *DeviceManager) loadFromDHCPLeases() []*Device {
+func (dm *DeviceManager) loadFromDHCPLeases(ctx context.Context) []*Device {
 	if dm == nil || dm.leaseManager == nil {
 		return []*Device{}
 	}
 
+	// Load leases from file first
+	if err := dm.leaseManager.LoadLeases(); err != nil {
+		// Log error but continue - file might not exist yet
+		// This is expected for OpenWrt and other systems
+		zerolog.Ctx(ctx).Debug().
+			Str("leases_path", dm.leaseManager.GetLeasesPath()).
+			Err(err).
+			Msg("Failed to load DHCP leases, file might not exist yet")
+
+		return []*Device{}
+	}
+
 	leases := dm.leaseManager.GetAllLeases()
+
+	zerolog.Ctx(ctx).Debug().
+		Str("leases_path", dm.leaseManager.GetLeasesPath()).
+		Int("leases_count", len(leases)).
+		Msg("Loaded DHCP leases")
 
 	devices := make([]*Device, 0, len(dm.devices))
 
@@ -702,7 +777,7 @@ func (dm *DeviceManager) loadFromDHCPLeases() []*Device {
 			Hostname:  lease.Hostname,
 			Status:    "online",
 			Source:    "dhcp",
-			Expire:    lease.Expire,
+			Expire:    &lease.Expire,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 			LastSeen:  time.Now(),
