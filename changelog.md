@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.0 - 2025-10-04
+
+### What's Changed
+
+* Update configuration and enhance device management features by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/45
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.2.0...v1.3.0
+
 ## v1.2.0 - 2025-10-01
 
 ### What's Changed
