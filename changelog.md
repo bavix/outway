@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.1 - 2025-10-04
+
+### What's Changed
+
+* Refactor device management and enhance DHCP lease handling by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/46
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.3.0...v1.3.1
+
 ## v1.3.0 - 2025-10-04
 
 ### What's Changed
