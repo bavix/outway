@@ -140,6 +140,14 @@ func (lm *LeaseManager) GetAllLeases() []*Lease {
 	return validLeases
 }
 
+// GetLeasesPath returns the path to the leases file.
+func (lm *LeaseManager) GetLeasesPath() string {
+	lm.mu.RLock()
+	defer lm.mu.RUnlock()
+
+	return lm.leasesPath
+}
+
 // ResolveHostname resolves a hostname to IP addresses.
 func (lm *LeaseManager) ResolveHostname(hostname string) ([]net.IP, []net.IP) {
 	lease := lm.GetLease(hostname)

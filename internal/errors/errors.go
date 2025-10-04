@@ -26,6 +26,10 @@ var (
 	ErrMACAddressInvalidCharacters  = errors.New("MAC address contains invalid characters")
 	ErrMACAddressInvalidBytes       = errors.New("MAC address must be 6 bytes")
 	ErrRequiredToolNotFound         = errors.New("required tool not found")
+	ErrMergerNotSet                 = errors.New("device merger not set")
+	ErrLeaseManagerNotInitialized   = errors.New("lease manager not initialized")
+	ErrSOLNotSupported              = errors.New("device does not support SoL")
+	ErrSOLPacketSendFailed          = errors.New("failed to send SoL packet")
 )
 
 // Error constructors.
