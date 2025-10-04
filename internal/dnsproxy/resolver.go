@@ -15,7 +15,7 @@ type Resolver interface {
 // UpstreamStrategy abstracts building resolvers for specific upstream types.
 type UpstreamStrategy interface {
 	Supports(t string) bool
-	NewResolver(t string, address string, deps StrategyDeps) Resolver
+	NewResolver(t string, address string, deps StrategyDeps) *UpstreamResolver
 }
 
 // StrategyDeps provides dependencies to build resolvers.

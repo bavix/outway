@@ -1,4 +1,3 @@
-//nolint:paralleltest
 package localzone_test
 
 import (
@@ -9,6 +8,7 @@ import (
 )
 
 func TestTestableZoneDetector_DetectZones_UCI(t *testing.T) {
+	t.Parallel()
 	// Create test filesystem using fstest.MapFS
 	fs := fstest.MapFS{
 		"etc/config/dhcp": &fstest.MapFile{
@@ -65,6 +65,8 @@ config dnsmasq 'home'
 }
 
 func TestTestableZoneDetector_DetectZones_ResolvConf(t *testing.T) {
+	t.Parallel()
+
 	fs := fstest.MapFS{
 		"etc/resolv.conf": &fstest.MapFile{
 			Data: []byte(`search lan home
@@ -98,6 +100,8 @@ domain lan`),
 }
 
 func TestTestableZoneDetector_DetectZones_Systemd(t *testing.T) {
+	t.Parallel()
+
 	fs := fstest.MapFS{
 		"run/systemd/resolve/resolv.conf": &fstest.MapFile{
 			Data: []byte(`search local lan
@@ -133,6 +137,8 @@ domain local`),
 }
 
 func TestTestableZoneDetector_DetectZones_MDNS(t *testing.T) {
+	t.Parallel()
+
 	fs := fstest.MapFS{
 		"etc/avahi/avahi-daemon.conf": &fstest.MapFile{
 			Data: []byte(`[server]
@@ -171,6 +177,7 @@ enable-wide-area=yes`),
 }
 
 func TestTestableZoneDetector_DetectZones_ManualZones(t *testing.T) {
+	t.Parallel()
 	// No files exist
 	fs := fstest.MapFS{}
 	fileReader := &FSTestFileReader{fs: fs}
@@ -199,6 +206,7 @@ func TestTestableZoneDetector_DetectZones_ManualZones(t *testing.T) {
 }
 
 func TestTestableZoneDetector_DetectZones_Fallback(t *testing.T) {
+	t.Parallel()
 	// No files exist and no manual zones
 	fs := fstest.MapFS{}
 	fileReader := &FSTestFileReader{fs: fs}
@@ -228,6 +236,8 @@ func TestTestableZoneDetector_DetectZones_Fallback(t *testing.T) {
 }
 
 func TestTestableZoneDetector_DetectZones_Duplicates(t *testing.T) {
+	t.Parallel()
+
 	fs := fstest.MapFS{
 		"etc/config/dhcp": &fstest.MapFile{
 			Data: []byte(`config dnsmasq 'lan'

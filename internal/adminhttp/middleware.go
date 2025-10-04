@@ -17,11 +17,13 @@ const (
 )
 
 // RecoverMiddleware recovers from panics and logs them.
-func RecoverMiddleware(logger *zerolog.Logger) func(http.Handler) http.Handler {
+func RecoverMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() {
+			defer func(ctx context.Context) {
 				if err := recover(); err != nil {
+					logger := zerolog.Ctx(ctx)
+
 					// Get stack trace
 					stack := make([]byte, defaultStackSize)
 					length := runtime.Stack(stack, false)
@@ -41,7 +43,7 @@ func RecoverMiddleware(logger *zerolog.Logger) func(http.Handler) http.Handler {
 					w.WriteHeader(http.StatusInternalServerError)
 					_, _ = fmt.Fprintf(w, `{"error":"internal server error","message":"request failed due to internal error"}`)
 				}
-			}()
+			}(r.Context())
 
 			next.ServeHTTP(w, r)
 		})
@@ -49,9 +51,11 @@ func RecoverMiddleware(logger *zerolog.Logger) func(http.Handler) http.Handler {
 }
 
 // LoggingMiddleware logs HTTP requests.
-func LoggingMiddleware(logger *zerolog.Logger) func(http.Handler) http.Handler {
+func LoggingMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			logger := zerolog.Ctx(ctx)
 			start := time.Now()
 
 			// Wrap response writer to capture status code
