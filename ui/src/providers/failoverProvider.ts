@@ -54,6 +54,27 @@ export class FailoverProvider implements Provider {
     this.statusListeners.clear();
   }
 
+  // Reconnect WebSocket after authentication
+  async reconnectWebSocket(): Promise<void> {
+    try {
+      // Close existing WebSocket connection
+      this.wsProvider.close();
+      
+      // Try to reconnect WebSocket
+      await this.wsProvider.connect();
+      this.isWSConnected = true;
+      console.log('WebSocket reconnected after authentication');
+      
+      // Resubscribe all listeners to WebSocket
+      this.resubscribeAll();
+      this.emitStatus();
+    } catch (error) {
+      console.warn('WebSocket reconnection failed after authentication:', error);
+      this.isWSConnected = false;
+      this.emitStatus();
+    }
+  }
+
   private monitorWSConnection(): void {
     // Debounced check to avoid false REST fallback flashes on cold start
     const checkInterval = setInterval(() => {

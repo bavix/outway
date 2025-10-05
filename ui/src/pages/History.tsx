@@ -45,6 +45,9 @@ export function History({ provider }: HistoryProps) {
       );
     }
     
+    // Sort by time in descending order (newest first)
+    filtered = filtered.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    
     // Limit to maxRows for performance
     return filtered.slice(0, maxRows);
   }, [events, filter, maxRows]);

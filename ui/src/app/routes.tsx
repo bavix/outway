@@ -101,6 +101,14 @@ export function App() {
       .then(() => {
         setProvider(failoverProvider);
         authService.setProvider(failoverProvider);
+        
+        // Set callback to reconnect WebSocket after authentication
+        authService.setOnAuthSuccess(() => {
+          failoverProvider.reconnectWebSocket().catch(error => {
+            console.error('Failed to reconnect WebSocket after authentication:', error);
+          });
+        });
+        
         console.log('Provider connected');
       })
       .catch((error) => {
