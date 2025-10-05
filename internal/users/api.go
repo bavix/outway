@@ -334,6 +334,48 @@ func (h *APIHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	render.Status(r, http.StatusNoContent)
 }
 
+// GetRoles returns all available roles with their descriptions.
+func (h *APIHandler) GetRoles(w http.ResponseWriter, r *http.Request) {
+	roles := []map[string]interface{}{
+		{
+			"name":              "admin",
+			"description":       "Full system access with all permissions",
+			"permissions_count": len(getAdminPermissions()),
+		},
+		{
+			"name":              "user",
+			"description":       "Limited access for regular users",
+			"permissions_count": len(getUserPermissions()),
+		},
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"roles": roles,
+		"count": len(roles),
+	})
+}
+
+// GetRolePermissions returns permissions for a specific role.
+func (h *APIHandler) GetRolePermissions(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	role := vars["role"]
+
+	permissions := GetRolePermissions(role)
+
+	// Group permissions by category
+	categories := make(map[string][]Permission)
+	for _, perm := range permissions {
+		categories[perm.Category] = append(categories[perm.Category], perm)
+	}
+
+	render.JSON(w, r, map[string]interface{}{
+		"role":        role,
+		"permissions": permissions,
+		"categories":  categories,
+		"count":       len(permissions),
+	})
+}
+
 // findUser finds a user by email.
 func (h *APIHandler) findUser(email string) *config.UserConfig {
 	users := h.config.GetUsers()
@@ -406,46 +448,4 @@ func (h *APIHandler) updateUser(user *config.UserConfig, req *UserRequest) error
 	}
 
 	return nil
-}
-
-// GetRoles returns all available roles with their descriptions.
-func (h *APIHandler) GetRoles(w http.ResponseWriter, r *http.Request) {
-	roles := []map[string]interface{}{
-		{
-			"name":              "admin",
-			"description":       "Full system access with all permissions",
-			"permissions_count": len(getAdminPermissions()),
-		},
-		{
-			"name":              "user",
-			"description":       "Limited access for regular users",
-			"permissions_count": len(getUserPermissions()),
-		},
-	}
-
-	render.JSON(w, r, map[string]interface{}{
-		"roles": roles,
-		"count": len(roles),
-	})
-}
-
-// GetRolePermissions returns permissions for a specific role.
-func (h *APIHandler) GetRolePermissions(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	role := vars["role"]
-
-	permissions := GetRolePermissions(role)
-
-	// Group permissions by category
-	categories := make(map[string][]Permission)
-	for _, perm := range permissions {
-		categories[perm.Category] = append(categories[perm.Category], perm)
-	}
-
-	render.JSON(w, r, map[string]interface{}{
-		"role":        role,
-		"permissions": permissions,
-		"categories":  categories,
-		"count":       len(permissions),
-	})
 }

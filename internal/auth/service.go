@@ -304,6 +304,25 @@ func (s *Service) Refresh(req *RefreshRequest) (*RefreshResponse, error) {
 	}, nil
 }
 
+// generateJWTSecret generates a random JWT secret.
+func generateJWTSecret() ([]byte, error) {
+	secret := make([]byte, JWTSecretLength) // 256 bits
+
+	_, err := rand.Read(secret)
+	if err != nil {
+		return nil, err
+	}
+
+	return secret, nil
+}
+
+// GetAuthStatus returns whether users exist in the system.
+func (s *Service) GetAuthStatus() (*AuthStatusResponse, error) {
+	return &AuthStatusResponse{
+		UsersExist: len(s.config.Users) > 0,
+	}, nil
+}
+
 // generateAccessToken generates an access JWT token for the given user.
 func (s *Service) generateAccessToken(email, role string) (string, error) {
 	claims := &Claims{
@@ -348,18 +367,6 @@ func (s *Service) generateRefreshToken(email string) (string, error) {
 	return token, nil
 }
 
-// generateJWTSecret generates a random JWT secret.
-func generateJWTSecret() ([]byte, error) {
-	secret := make([]byte, JWTSecretLength) // 256 bits
-
-	_, err := rand.Read(secret)
-	if err != nil {
-		return nil, err
-	}
-
-	return secret, nil
-}
-
 // cleanupExpiredTokens removes expired refresh tokens periodically.
 func (s *Service) cleanupExpiredTokens() {
 	ticker := time.NewTicker(CleanupIntervalMinutes * time.Minute) // Cleanup every 5 minutes
@@ -389,11 +396,4 @@ func (s *Service) findUser(email string) *config.UserConfig {
 	}
 
 	return nil
-}
-
-// GetAuthStatus returns whether users exist in the system.
-func (s *Service) GetAuthStatus() (*AuthStatusResponse, error) {
-	return &AuthStatusResponse{
-		UsersExist: len(s.config.Users) > 0,
-	}, nil
 }

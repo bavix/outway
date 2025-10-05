@@ -7,7 +7,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+//nolint:funlen
 func TestValidateUserRequest(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		request     UserRequest
@@ -115,6 +118,8 @@ func TestValidateUserRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := ValidateUserRequest(&tt.request)
 
 			if tt.expectError {
@@ -135,6 +140,8 @@ func TestValidateUserRequest(t *testing.T) {
 }
 
 func TestHashPassword(t *testing.T) {
+	t.Parallel()
+
 	password := "testpassword123"
 
 	hash, err := HashPassword(password)
@@ -151,6 +158,8 @@ func TestHashPassword(t *testing.T) {
 }
 
 func TestVerifyPassword(t *testing.T) {
+	t.Parallel()
+
 	password := "testpassword123"
 	wrongPassword := "wrongpassword"
 
@@ -174,6 +183,8 @@ func TestVerifyPassword(t *testing.T) {
 }
 
 func TestVerifyPassword_InvalidHash(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		hash        string
@@ -203,6 +214,8 @@ func TestVerifyPassword_InvalidHash(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			valid, err := VerifyPassword("password", tt.hash)
 
 			if tt.expectError {
@@ -218,6 +231,8 @@ func TestVerifyPassword_InvalidHash(t *testing.T) {
 }
 
 func TestUser_ToResponse(t *testing.T) {
+	t.Parallel()
+
 	user := &User{
 		Email:    "testuser@example.com",
 		Password: "hashed_password",
@@ -242,6 +257,8 @@ func TestUser_ToResponse(t *testing.T) {
 }
 
 func TestGetRolePermissions_Admin(t *testing.T) {
+	t.Parallel()
+
 	permissions := getAdminPermissions()
 
 	// Admin should have many permissions
@@ -266,6 +283,8 @@ func TestGetRolePermissions_Admin(t *testing.T) {
 }
 
 func TestGetRolePermissions_User(t *testing.T) {
+	t.Parallel()
+
 	permissions := getUserPermissions()
 
 	// User should have fewer permissions than admin
@@ -294,6 +313,8 @@ func TestGetRolePermissions_User(t *testing.T) {
 }
 
 func TestDefaultArgon2Params(t *testing.T) {
+	t.Parallel()
+
 	params := DefaultArgon2Params()
 
 	assert.Equal(t, uint32(Argon2Memory), params.Memory)

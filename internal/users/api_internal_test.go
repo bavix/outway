@@ -15,6 +15,8 @@ import (
 )
 
 func TestAPIHandler_GetRoles(t *testing.T) {
+	t.Parallel()
+
 	cfg := &MockConfig{}
 	handler := NewAPIHandler(cfg)
 
@@ -64,7 +66,10 @@ func TestAPIHandler_GetRoles(t *testing.T) {
 	assert.Positive(t, int(userPermissionsCount))
 }
 
+//nolint:funlen
 func TestAPIHandler_GetRolePermissions(t *testing.T) {
+	t.Parallel()
+
 	cfg := &MockConfig{}
 	handler := NewAPIHandler(cfg)
 
@@ -96,6 +101,8 @@ func TestAPIHandler_GetRolePermissions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/users/roles/"+tt.role+"/permissions", nil)
 			w := httptest.NewRecorder()
 
@@ -130,7 +137,10 @@ func TestAPIHandler_GetRolePermissions(t *testing.T) {
 	}
 }
 
+//nolint:funlen
 func TestAPIHandler_CreateUser(t *testing.T) {
+	t.Parallel()
+
 	cfg := &MockConfig{
 		Users: []config.UserConfig{},
 	}
@@ -199,6 +209,7 @@ func TestAPIHandler_CreateUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Reset users for each test
 			cfg.Users = []config.UserConfig{}
 			cfg.SaveError = nil
@@ -237,6 +248,8 @@ func TestAPIHandler_CreateUser(t *testing.T) {
 }
 
 func TestAPIHandler_GetUsers(t *testing.T) {
+	t.Parallel()
+
 	cfg := &MockConfig{
 		Users: []config.UserConfig{
 			{
@@ -287,6 +300,8 @@ func TestAPIHandler_GetUsers(t *testing.T) {
 }
 
 func TestGetRolePermissions(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name               string
 		role               string
@@ -324,6 +339,8 @@ func TestGetRolePermissions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			permissions := GetRolePermissions(tt.role)
 
 			assert.Len(t, permissions, tt.expectedCount)
@@ -349,6 +366,8 @@ func TestGetRolePermissions(t *testing.T) {
 }
 
 func TestAPIHandler_CreateUser_Duplicate(t *testing.T) {
+	t.Parallel()
+
 	cfg := &MockConfig{
 		Users: []config.UserConfig{},
 	}
