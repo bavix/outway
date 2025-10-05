@@ -1,4 +1,4 @@
-package adminhttp
+package dashboardhttp
 
 import (
 	"context"
@@ -1464,7 +1464,7 @@ func (s *Server) buildMiddlewareChain(ctx context.Context) http.Handler {
 	h = chimw.Recoverer(h)
 
 	// OTEL wrapper
-	return otelhttp.NewHandler(h, "adminhttp")
+	return otelhttp.NewHandler(h, "dashboardhttp")
 }
 
 func (s *Server) createServer(ctx context.Context, handler http.Handler) *http.Server {

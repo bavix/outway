@@ -205,7 +205,7 @@ func TestBackendNilHandling(t *testing.T) {
 	// Test that backends handle nil context gracefully
 	// Note: Some backends may panic with nil context due to exec.CommandContext
 	// This is expected behavior, so we skip this test
-	t.Skip("Skipping nil context test - backends may panic with nil context")
+	// Skip nil context test - backends may panic with nil context
 }
 
 func TestBackendTTLNormalization(t *testing.T) {

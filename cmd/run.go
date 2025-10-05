@@ -4,8 +4,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
-	"github.com/bavix/outway/internal/adminhttp"
 	"github.com/bavix/outway/internal/config"
+	"github.com/bavix/outway/internal/dashboardhttp"
 	"github.com/bavix/outway/internal/dnsproxy"
 	"github.com/bavix/outway/internal/firewall"
 	"github.com/bavix/outway/internal/metrics"
@@ -83,8 +83,8 @@ func newRunCmd() *cobra.Command { //nolint:cyclop,funlen
 			proxy := dnsproxy.New(cfg, backend)
 
 			if cfg.HTTP.Enabled {
-				admin := adminhttp.NewServerWithConfig(&cfg.HTTP, proxy)
-				if err := admin.Start(ctx); err != nil {
+				dashboard := dashboardhttp.NewServerWithConfig(&cfg.HTTP, proxy)
+				if err := dashboard.Start(ctx); err != nil {
 					return err
 				}
 			}

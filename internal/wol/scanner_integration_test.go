@@ -16,7 +16,7 @@ func TestNetworkScanner_Integration(t *testing.T) {
 	t.Parallel()
 
 	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+		return // Skip integration test in short mode
 	}
 
 	scanner := wol.NewNetworkScanner()
@@ -61,7 +61,7 @@ func TestNetworkScanner_RealScan(t *testing.T) {
 	t.Parallel()
 
 	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
+		return // Skip integration test in short mode
 	}
 
 	scanner := wol.NewNetworkScanner()

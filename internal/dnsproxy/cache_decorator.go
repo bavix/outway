@@ -17,7 +17,7 @@ type cacheItem struct {
 	expire time.Time
 }
 
-// cacheChangeNotify is an optional hook set by adminhttp to broadcast cache changes.
+// cacheChangeNotify is an optional hook set by dashboardhttp to broadcast cache changes.
 //
 //nolint:gochecknoglobals
 var cacheChangeNotify func()

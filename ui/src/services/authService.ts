@@ -20,7 +20,6 @@ export class AuthService {
 
   private listeners: Set<(state: AuthState) => void> = new Set();
   private refreshTimer: NodeJS.Timeout | null = null;
-  private authStatus: { usersExist: boolean } | null = null;
 
   constructor() {
     this.loadFromStorage();
@@ -35,35 +34,21 @@ export class AuthService {
 
   // Get authentication status
   async getAuthStatus(): Promise<{ usersExist: boolean }> {
-    if (this.authStatus) {
-      return this.authStatus;
-    }
-
     try {
       if (this.provider) {
         const status = await this.provider.getAuthStatus();
-        this.authStatus = status;
         return status;
       }
-      // If no provider available, use fallback logic
-      if (this.state.isAuthenticated) {
-        // If we have tokens, users definitely exist
-        return { usersExist: true };
-      }
-      // If not authenticated and no provider, assume users exist (safer default)
-      // This prevents showing "create first user" when users actually exist
-      return { usersExist: true };
+      // If no provider available, return fallback to prevent infinite loading
+      console.warn('Provider not available yet, using fallback auth status');
+      return { usersExist: false };
     } catch (error) {
       console.warn('Failed to get auth status from provider:', error);
-      // Fallback: assume users exist to avoid showing create first user form incorrectly
-      return { usersExist: true };
+      // Return fallback on error to prevent infinite loading
+      return { usersExist: false };
     }
   }
 
-  // Set auth status (called by app when provider is available)
-  setAuthStatus(status: { usersExist: boolean }) {
-    this.authStatus = status;
-  }
 
   // Set provider for auth status checks
   private provider: any = null;
