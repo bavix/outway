@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.2 - 2025-10-05
+
+### What's Changed
+
+* Refactor WebSocket authentication handling and improve event sorting by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/49
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.4.1...v1.4.2
+
 ## v1.4.1 - 2025-10-05
 
 ### What's Changed
