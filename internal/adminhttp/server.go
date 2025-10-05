@@ -26,6 +26,7 @@ import (
 	"github.com/unrolled/secure"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	"github.com/bavix/outway/internal/auth"
 	"github.com/bavix/outway/internal/config"
 	"github.com/bavix/outway/internal/devices"
 	"github.com/bavix/outway/internal/dnsproxy"
@@ -33,6 +34,7 @@ import (
 	"github.com/bavix/outway/internal/localzone"
 	"github.com/bavix/outway/internal/metrics"
 	"github.com/bavix/outway/internal/updater"
+	"github.com/bavix/outway/internal/users"
 	"github.com/bavix/outway/internal/version"
 	"github.com/bavix/outway/ui"
 )
@@ -69,6 +71,7 @@ type Server struct {
 	proxy         *dnsproxy.Proxy
 	updater       *updater.Updater
 	deviceManager *devices.DeviceManager
+	authService   *auth.Service
 	wsMu          sync.RWMutex // protects conns map (read for iteration, write for add/remove)
 	wsWriteMu     sync.Mutex   // protects WebSocket writes (WriteJSON is not a "read" operation)
 	conns         map[*websocket.Conn]struct{}
@@ -102,6 +105,16 @@ func NewServer(addr string, proxy *dnsproxy.Proxy) *Server {
 		startTime: time.Now(),
 		version:   version.GetVersion(),
 		buildTime: version.GetBuildTime(),
+	}
+
+	// Initialize auth service
+	if cfg := proxy.GetConfig(); cfg != nil {
+		authService, err := auth.NewService(cfg)
+		if err != nil {
+			panic(err) // This should not happen with valid config
+		}
+
+		s.authService = authService
 	}
 
 	// Derive ports from inputs and loaded config
@@ -148,6 +161,16 @@ func NewServerWithConfig(httpConfig *config.HTTPConfig, proxy *dnsproxy.Proxy) *
 		startTime: time.Now(),
 		version:   version.GetVersion(),
 		buildTime: version.GetBuildTime(),
+	}
+
+	// Initialize auth service
+	if cfg := proxy.GetConfig(); cfg != nil {
+		authService, err := auth.NewService(cfg)
+		if err != nil {
+			panic(err) // This should not happen with valid config
+		}
+
+		s.authService = authService
 	}
 
 	s.routes()
@@ -249,18 +272,41 @@ func (s *Server) Start(ctx context.Context) error {
 
 //nolint:funlen
 func (s *Server) routes() {
-	// API v1 routes
+	// Authentication routes (no auth required)
+	if s.authService != nil {
+		authHandler := auth.NewAPIHandler(s.authService)
+		authHandler.RegisterRoutes(s.mux)
+	}
+
+	// API v1 routes with authentication middleware
 	api := s.mux.PathPrefix("/api/v1").Subrouter()
+	if s.authService != nil {
+		api.Use(auth.AuthMiddleware(s.authService))
+	}
 
-	// Rule groups management
-	api.HandleFunc("/rule-groups", s.handleRuleGroups).Methods("GET", "POST")
-	api.HandleFunc("/rule-groups/{name}", s.handleRuleGroup).Methods("GET", "PUT", "DELETE")
+	// User management routes (admin only)
+	if s.authService != nil {
+		userHandler := users.NewAPIHandler(&users.ConfigWrapper{Config: s.proxy.GetConfig()})
+		userAPI := api.PathPrefix("/users").Subrouter()
+		userAPI.Use(auth.RequirePermission(auth.PermissionViewUsers))
+		userHandler.RegisterRoutes(userAPI)
+	}
 
-	// Upstreams management
-	api.HandleFunc("/upstreams", s.handleUpstreams).Methods("GET", "POST", "PUT", "DELETE")
+	// Rule groups management (admin only)
+	ruleGroupsAPI := api.PathPrefix("/rule-groups").Subrouter()
+	ruleGroupsAPI.Use(auth.RequirePermission(auth.PermissionManageSystem))
+	ruleGroupsAPI.HandleFunc("", s.handleRuleGroups).Methods("GET", "POST")
+	ruleGroupsAPI.HandleFunc("/{name}", s.handleRuleGroup).Methods("GET", "PUT", "DELETE")
 
-	// Hosts management
-	api.HandleFunc("/hosts", s.handleHosts).Methods("GET", "PUT")
+	// Upstreams management (admin only)
+	upstreamsAPI := api.PathPrefix("/upstreams").Subrouter()
+	upstreamsAPI.Use(auth.RequirePermission(auth.PermissionManageSystem))
+	upstreamsAPI.HandleFunc("", s.handleUpstreams).Methods("GET", "POST", "PUT", "DELETE")
+
+	// Hosts management (admin only)
+	hostsAPI := api.PathPrefix("/hosts").Subrouter()
+	hostsAPI.Use(auth.RequirePermission(auth.PermissionManageSystem))
+	hostsAPI.HandleFunc("", s.handleHosts).Methods("GET", "PUT")
 
 	// Local DNS management - always register API endpoints
 	// Initialize local zones handler with auto-detection
@@ -300,34 +346,59 @@ func (s *Server) routes() {
 		zerolog.Ctx(context.Background()).Warn().Err(err).Msg("Failed to start file watcher")
 	}
 
-	// Always register API routes
-	localHandler.RegisterRoutes(s.mux)
+	// Register local DNS API routes (protected)
+	localHandler.RegisterRoutes(api)
 
-	// Register devices API routes
+	// Register devices API routes (protected)
 	devicesAPIHandler := devices.NewAPIHandler(s.deviceManager)
-	devicesAPIHandler.RegisterRoutes(s.mux)
+	devicesAPI := api.PathPrefix("/devices").Subrouter()
+	devicesAPI.Use(auth.RequirePermission(auth.PermissionViewDevices))
+	devicesAPIHandler.RegisterRoutes(devicesAPI)
 
-	// Statistics and monitoring
-	api.HandleFunc("/stats", s.handleStats).Methods("GET")
-	api.HandleFunc("/history", s.handleHistory).Methods("GET")
-	api.HandleFunc("/info", s.handleInfo).Methods("GET")
-	api.HandleFunc("/overview", s.handleOverview).Methods("GET")
+	// Statistics and monitoring (protected)
+	statsAPI := api.PathPrefix("/stats").Subrouter()
+	statsAPI.Use(auth.RequirePermission(auth.PermissionViewStats))
+	statsAPI.HandleFunc("", s.handleStats).Methods("GET")
 
-	// DNS test resolve
-	api.HandleFunc("/resolve", s.handleResolveTest).Methods("GET")
+	infoAPI := api.PathPrefix("/info").Subrouter()
+	infoAPI.Use(auth.RequirePermission(auth.PermissionViewInfo))
+	infoAPI.HandleFunc("", s.handleInfo).Methods("GET")
 
-	// Cache management
-	api.HandleFunc("/cache/flush", s.handleCacheFlush).Methods("POST")
-	api.HandleFunc("/cache/delete", s.handleCacheDelete).Methods("POST")
-	api.HandleFunc("/cache", s.handleCacheList).Methods("GET")
-	api.HandleFunc("/cache/key", s.handleCacheDeleteKey).Methods("DELETE")
-	api.HandleFunc("/cache/key", s.handleCacheGetKey).Methods("GET")
+	overviewAPI := api.PathPrefix("/overview").Subrouter()
+	overviewAPI.Use(auth.RequirePermission(auth.PermissionViewOverview))
+	overviewAPI.HandleFunc("", s.handleOverview).Methods("GET")
 
-	// Update management
-	api.HandleFunc("/update/check", s.handleUpdateCheck).Methods("GET")
-	api.HandleFunc("/update/download", s.handleUpdateDownload).Methods("POST")
-	api.HandleFunc("/update/install", s.handleUpdateInstall).Methods("POST")
-	api.HandleFunc("/update/status", s.handleUpdateStatus).Methods("GET")
+	// History (protected)
+	historyAPI := api.PathPrefix("/history").Subrouter()
+	historyAPI.Use(auth.RequirePermission(auth.PermissionViewHistory))
+	historyAPI.HandleFunc("", s.handleHistory).Methods("GET")
+
+	// Configuration (safe version without secrets) - protected
+	configAPI := api.PathPrefix("/config").Subrouter()
+	configAPI.Use(auth.RequirePermission(auth.PermissionViewConfig))
+	configAPI.HandleFunc("", s.handleConfig).Methods("GET")
+
+	// DNS test resolve (protected)
+	resolveAPI := api.PathPrefix("/resolve").Subrouter()
+	resolveAPI.Use(auth.RequirePermission(auth.PermissionViewResolve))
+	resolveAPI.HandleFunc("", s.handleResolveTest).Methods("GET")
+
+	// Cache management (protected)
+	cacheAPI := api.PathPrefix("/cache").Subrouter()
+	cacheAPI.Use(auth.RequirePermission(auth.PermissionViewCache))
+	cacheAPI.HandleFunc("/flush", s.handleCacheFlush).Methods("POST")
+	cacheAPI.HandleFunc("/delete", s.handleCacheDelete).Methods("POST")
+	cacheAPI.HandleFunc("", s.handleCacheList).Methods("GET")
+	cacheAPI.HandleFunc("/key", s.handleCacheDeleteKey).Methods("DELETE")
+	cacheAPI.HandleFunc("/key", s.handleCacheGetKey).Methods("GET")
+
+	// Update management (protected)
+	updateAPI := api.PathPrefix("/update").Subrouter()
+	updateAPI.Use(auth.RequirePermission(auth.PermissionViewUpdates))
+	updateAPI.HandleFunc("/check", s.handleUpdateCheck).Methods("GET")
+	updateAPI.HandleFunc("/download", s.handleUpdateDownload).Methods("POST")
+	updateAPI.HandleFunc("/install", s.handleUpdateInstall).Methods("POST")
+	updateAPI.HandleFunc("/status", s.handleUpdateStatus).Methods("GET")
 
 	// Health check
 	s.mux.HandleFunc("/health", s.handleHealth).Methods("GET")
@@ -581,6 +652,31 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }} //nolint:gochecknoglobals // websocket upgrader
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) { //nolint:cyclop,funlen
+	// Check JWT token for WebSocket connection
+	if s.authService != nil {
+		var token string
+
+		// Try to get token from Authorization header first
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		} else {
+			// Fallback to URL parameter for WebSocket connections
+			token = r.URL.Query().Get("token")
+		}
+
+		if token == "" {
+			http.Error(w, "authorization token required", http.StatusUnauthorized)
+			return
+		}
+
+		_, err := s.authService.ValidateToken(token)
+		if err != nil {
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		// Log the error but don't use http.Error as it conflicts with WebSocket upgrade
@@ -932,6 +1028,15 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, payload)
+}
+
+// handleConfig returns safe configuration without sensitive data.
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	cfg := s.proxy.GetConfig()
+	safeConfig := cfg.ToSafeConfig()
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, safeConfig)
 }
 
 // handleCacheFlush clears all DNS cache entries.
@@ -1321,7 +1426,12 @@ func (s *Server) buildMiddlewareChain(ctx context.Context) http.Handler {
 	var h http.Handler = s.mux
 
 	// CORS
-	c := cors.New(cors.Options{AllowOriginFunc: func(_ string) bool { return true }, AllowCredentials: true, AllowedHeaders: []string{"*"}})
+	c := cors.New(cors.Options{
+		AllowOriginFunc:  func(_ string) bool { return true },
+		AllowCredentials: true,
+		AllowedHeaders:   []string{"*"},
+		ExposedHeaders:   []string{"Authorization"},
+	})
 	h = c.Handler(h)
 
 	// Security headers

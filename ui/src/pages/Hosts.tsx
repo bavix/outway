@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { FailoverProvider } from '../providers/failoverProvider.js';
 import type { HostOverride } from '../providers/types.js';
-import { Button } from '../components/Button.js';
 import { Card } from '../components/Card.js';
-import { Input } from '../components/Input.js';
+import { DataTable } from '../components/DataTable.js';
+import { ActionButton } from '../components/ActionButton.js';
+import { FormField } from '../components/FormField.js';
+import { LoadingState } from '../components/LoadingState.js';
 
 interface HostsProps { provider: FailoverProvider }
 
@@ -32,59 +34,120 @@ export function Hosts({ provider }: HostsProps) {
     }
   };
 
+  const columns = [
+    {
+      key: 'pattern',
+      title: 'Pattern',
+      width: '28%',
+      render: (value: string, _item: HostOverride, index: number) => (
+        <FormField
+          label=""
+          value={value || ''}
+          onChange={(val) => update(index, { pattern: val as string })}
+          placeholder="e.g. *.example.com"
+          className="mb-0"
+        />
+      )
+    },
+    {
+      key: 'a',
+      title: 'A Records',
+      width: '28%',
+      render: (value: string[], _item: HostOverride, index: number) => (
+        <FormField
+          label=""
+          value={(value || []).join(', ')}
+          onChange={(val) => update(index, { a: parseCSV(val as string) })}
+          placeholder="127.0.0.1, 10.0.0.1"
+          className="mb-0"
+        />
+      )
+    },
+    {
+      key: 'aaaa',
+      title: 'AAAA Records',
+      width: '28%',
+      render: (value: string[], _item: HostOverride, index: number) => (
+        <FormField
+          label=""
+          value={(value || []).join(', ')}
+          onChange={(val) => update(index, { aaaa: parseCSV(val as string) })}
+          placeholder="::1, 2001:db8::1"
+          className="mb-0"
+        />
+      )
+    },
+    {
+      key: 'ttl',
+      title: 'TTL',
+      width: '8%',
+      render: (value: number, _item: HostOverride, index: number) => (
+        <FormField
+          label=""
+          type="number"
+          value={value ?? 60}
+          onChange={(val) => update(index, { ttl: val as number })}
+          placeholder="60"
+          className="mb-0"
+        />
+      )
+    },
+    {
+      key: 'actions',
+      title: 'Actions',
+      width: '8%',
+      render: (_value: any, _item: HostOverride, index: number) => (
+        <div className="flex justify-end">
+          <ActionButton
+            action="delete"
+            onClick={() => removeRow(index)}
+            size="sm"
+          />
+        </div>
+      )
+    }
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Hosts</h1>
         <div className="space-x-2">
-          <Button variant="secondary" onClick={addRow}>Add</Button>
-          <Button onClick={save}>Save</Button>
+          <ActionButton action="add" onClick={addRow} />
+          <ActionButton action="save" onClick={save} />
         </div>
       </div>
-      {error && <div className="text-red-600 text-sm">{error}</div>}
+      
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800 dark:text-red-200">
+                Error
+              </h3>
+              <div className="mt-2 text-sm text-red-700 dark:text-red-300">
+                {error}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Card title="Overrides" subtitle="Static DNS responses with wildcard support">
         {loading ? (
-          <div className="text-gray-500">Loading...</div>
+          <LoadingState message="Loading hosts..." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-800">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Pattern</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">A (comma separated)</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">AAAA (comma separated)</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">TTL</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-600 dark:text-gray-300 uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                {hosts.map((h, idx) => (
-                  <tr key={idx}>
-                    <td className="px-3 py-2 w-[28%]">
-                      <Input value={h.pattern || ''} onInput={(e: any) => update(idx, { pattern: e.currentTarget.value })} placeholder="e.g. *.example.com" />
-                    </td>
-                    <td className="px-3 py-2 w-[28%]">
-                      <Input value={(h.a || []).join(', ')} onInput={(e: any) => update(idx, { a: parseCSV(e.currentTarget.value) })} placeholder="127.0.0.1, 10.0.0.1" />
-                    </td>
-                    <td className="px-3 py-2 w-[28%]">
-                      <Input value={(h.aaaa || []).join(', ')} onInput={(e: any) => update(idx, { aaaa: parseCSV(e.currentTarget.value) })} placeholder="::1, 2001:db8::1" />
-                    </td>
-                    <td className="px-3 py-2 w-[8%]">
-                      <Input type="number" value={String(h.ttl ?? 60)} onInput={(e: any) => update(idx, { ttl: Number(e.currentTarget.value) })} placeholder="60" />
-                    </td>
-                    <td className="px-3 py-2 text-right w-[8%]">
-                      <Button variant="danger" onClick={() => removeRow(idx)}>Del</Button>
-                    </td>
-                  </tr>
-                ))}
-                {hosts.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-6 text-sm text-gray-500 text-center">No hosts configured. Click Add to create one.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={hosts}
+            columns={columns}
+            emptyMessage="No hosts configured"
+            emptyDescription="Click Add to create your first host override."
+          />
         )}
       </Card>
     </div>

@@ -8,8 +8,19 @@ import {
   HostOverride,
   UpstreamItem,
   OverviewData,
-  CacheListResponse
+  CacheListResponse,
+  LoginRequest,
+  LoginResponse,
+  RefreshResponse,
+  FirstUserRequest,
+  UserRequest,
+  UserResponse,
+  UsersResponse,
+  AuthStatusResponse,
+  RolesResponse,
+  RolePermissionsResponse
 } from './types.js';
+import { authService } from '../services/authService.js';
 
 export class WSProvider implements Provider {
   private ws: WebSocket | null = null;
@@ -27,7 +38,16 @@ export class WSProvider implements Provider {
     return new Promise((resolve, reject) => {
       try {
         const wsUrl = this.url.replace(/^http/, 'ws');
-        this.ws = new WebSocket(wsUrl);
+        const token = authService.getAccessToken();
+        
+        if (!token) {
+          reject(new Error('No access token available'));
+          return;
+        }
+
+        // Add token to WebSocket URL or headers
+        const urlWithToken = `${wsUrl}?token=${encodeURIComponent(token)}`;
+        this.ws = new WebSocket(urlWithToken);
         
         this.ws.onopen = () => {
           console.log('WebSocket connected');
@@ -341,5 +361,56 @@ export class WSProvider implements Provider {
 
   async testLocalResolve(_name: string): Promise<any> {
     throw new Error('Use REST provider for Local DNS operations');
+  }
+
+  // Authentication methods - delegate to REST provider
+  async getAuthStatus(): Promise<AuthStatusResponse> {
+    throw new Error('Use REST provider for authentication');
+  }
+
+  async login(_credentials: LoginRequest): Promise<LoginResponse> {
+    throw new Error('Use REST provider for authentication');
+  }
+
+  async refreshToken(_refreshToken: string): Promise<RefreshResponse> {
+    throw new Error('Use REST provider for authentication');
+  }
+
+  async createFirstUser(_user: FirstUserRequest): Promise<LoginResponse> {
+    throw new Error('Use REST provider for authentication');
+  }
+
+  // User management methods - delegate to REST provider
+  async fetchUsers(): Promise<UsersResponse> {
+    throw new Error('Use REST provider for user management');
+  }
+
+  async createUser(_user: UserRequest): Promise<UserResponse> {
+    throw new Error('Use REST provider for user management');
+  }
+
+  async getUser(_login: string): Promise<UserResponse> {
+    throw new Error('Use REST provider for user management');
+  }
+
+  async updateUser(_login: string, _user: UserRequest): Promise<UserResponse> {
+    throw new Error('Use REST provider for user management');
+  }
+
+  async deleteUser(_login: string): Promise<void> {
+    throw new Error('Use REST provider for user management');
+  }
+
+  async changePassword(_login: string, _newPassword: string): Promise<void> {
+    throw new Error('Use REST provider for user management');
+  }
+
+  // Role and permissions
+  async fetchRoles(): Promise<RolesResponse> {
+    throw new Error('Use REST provider for role management');
+  }
+
+  async fetchRolePermissions(_role: string): Promise<RolePermissionsResponse> {
+    throw new Error('Use REST provider for role management');
   }
 }

@@ -20,28 +20,28 @@ func NewAPIHandler(manager *DeviceManager) *APIHandler {
 }
 
 // RegisterRoutes registers all device API routes.
-func (h *APIHandler) RegisterRoutes(mux *mux.Router) {
-	api := mux.PathPrefix("/api/v1/devices").Subrouter()
+func (h *APIHandler) RegisterRoutes(api *mux.Router) {
+	devicesAPI := api.PathPrefix("/devices").Subrouter()
 
 	// Device filtering (must come before /{id} routes)
-	api.HandleFunc("/online", h.GetOnlineDevices).Methods("GET")
-	api.HandleFunc("/wakeable", h.GetWakeableDevices).Methods("GET")
-	api.HandleFunc("/resolvable", h.GetResolvableDevices).Methods("GET")
-	api.HandleFunc("/type/{type}", h.GetDevicesByType).Methods("GET")
-	api.HandleFunc("/scan", h.ScanDevices).Methods("GET")
-	api.HandleFunc("/stats", h.GetStats).Methods("GET")
-	api.HandleFunc("/wake-all", h.WakeAllDevices).Methods("POST")
+	devicesAPI.HandleFunc("/online", h.GetOnlineDevices).Methods("GET")
+	devicesAPI.HandleFunc("/wakeable", h.GetWakeableDevices).Methods("GET")
+	devicesAPI.HandleFunc("/resolvable", h.GetResolvableDevices).Methods("GET")
+	devicesAPI.HandleFunc("/type/{type}", h.GetDevicesByType).Methods("GET")
+	devicesAPI.HandleFunc("/scan", h.ScanDevices).Methods("GET")
+	devicesAPI.HandleFunc("/stats", h.GetStats).Methods("GET")
+	devicesAPI.HandleFunc("/wake-all", h.WakeAllDevices).Methods("POST")
 
 	// Device management
-	api.HandleFunc("", h.GetDevices).Methods("GET")
-	api.HandleFunc("", h.AddDevice).Methods("POST")
-	api.HandleFunc("/{id}", h.GetDevice).Methods("GET")
-	api.HandleFunc("/{id}", h.UpdateDevice).Methods("PUT")
-	api.HandleFunc("/{id}", h.DeleteDevice).Methods("DELETE")
+	devicesAPI.HandleFunc("", h.GetDevices).Methods("GET")
+	devicesAPI.HandleFunc("", h.AddDevice).Methods("POST")
+	devicesAPI.HandleFunc("/{id}", h.GetDevice).Methods("GET")
+	devicesAPI.HandleFunc("/{id}", h.UpdateDevice).Methods("PUT")
+	devicesAPI.HandleFunc("/{id}", h.DeleteDevice).Methods("DELETE")
 
 	// Device actions
-	api.HandleFunc("/{id}/wake", h.WakeDevice).Methods("POST")
-	api.HandleFunc("/{id}/resolve", h.ResolveDevice).Methods("GET")
+	devicesAPI.HandleFunc("/{id}/wake", h.WakeDevice).Methods("POST")
+	devicesAPI.HandleFunc("/{id}/resolve", h.ResolveDevice).Methods("GET")
 }
 
 // GetDevices returns all devices.

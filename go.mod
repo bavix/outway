@@ -7,6 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/render v1.0.3
 	github.com/goccy/go-yaml v1.18.0
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -19,6 +20,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/unrolled/secure v1.17.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
+	golang.org/x/crypto v0.42.0
 	golang.org/x/mod v0.28.0
 	golang.org/x/sync v0.17.0
 	golang.org/x/time v0.13.0

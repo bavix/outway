@@ -211,6 +211,7 @@ type Config struct {
 	HTTP       HTTPConfig       `yaml:"http,omitempty"`
 	Hosts      []HostOverride   `yaml:"hosts,omitempty"`
 	Update     UpdateConfig     `yaml:"update,omitempty"`
+	Users      []UserConfig     `yaml:"users,omitempty"`
 	// LocalZones removed - Local DNS is now fully auto-detected
 	Path string `yaml:"-"`
 }
@@ -224,6 +225,45 @@ type HostOverride struct {
 	A       []string `json:"a,omitempty"    yaml:"a,omitempty"`
 	AAAA    []string `json:"aaaa,omitempty" yaml:"aaaa,omitempty"`
 	TTL     uint32   `json:"ttl,omitempty"  yaml:"ttl,omitempty"`
+}
+
+// UserConfig represents a user configuration.
+type UserConfig struct {
+	Email    string `json:"email"    yaml:"email"`
+	Password string `json:"password" yaml:"password"` // This is a hash, not plain text
+	Role     string `json:"role"     yaml:"role"`     // "admin" for now
+}
+
+// SafeConfig represents a configuration without sensitive data for API responses.
+type SafeConfig struct {
+	AppName    string           `json:"app_name,omitempty"`
+	Listen     ListenConfig     `json:"listen"`
+	Upstreams  []UpstreamConfig `json:"upstreams"`
+	RuleGroups []RuleGroup      `json:"rule_groups"`
+	History    HistoryConfig    `json:"history,omitempty"`
+	Log        LogConfig        `json:"log,omitempty"`
+	Cache      CacheConfig      `json:"cache,omitempty"`
+	HTTP       HTTPConfig       `json:"http,omitempty"`
+	Hosts      []HostOverride   `json:"hosts,omitempty"`
+	Update     UpdateConfig     `json:"update,omitempty"`
+	Users      []UserConfig     `json:"users,omitempty"`
+}
+
+// ToSafeConfig converts Config to SafeConfig (without sensitive data).
+func (c *Config) ToSafeConfig() SafeConfig {
+	return SafeConfig{
+		AppName:    c.AppName,
+		Listen:     c.Listen,
+		Upstreams:  c.Upstreams,
+		RuleGroups: c.RuleGroups,
+		History:    c.History,
+		Log:        c.Log,
+		Cache:      c.Cache,
+		HTTP:       c.HTTP,
+		Hosts:      c.Hosts,
+		Update:     c.Update,
+		Users:      c.Users,
+	}
 }
 
 func (c *Config) GetMinMarkTTL(ttl uint32) time.Duration {

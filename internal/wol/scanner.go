@@ -43,7 +43,7 @@ type NetworkScanner struct {
 // NewNetworkScanner creates a new network scanner.
 func NewNetworkScanner() *NetworkScanner {
 	return &NetworkScanner{
-		timeout: scanTimeout, // Уменьшили таймаут для быстрого сканирования
+		timeout: scanTimeout, // Reduced timeout for faster scanning
 	}
 }
 
