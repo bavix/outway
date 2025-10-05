@@ -270,7 +270,7 @@ func RecordHTTP(method, route string, status int) {
 	AdminRequestsTotal.WithLabelValues(Service(), method, route, strconv.Itoa(status)).Inc()
 }
 
-// metrics server is provided by adminhttp; no separate server here
+// metrics server is provided by dashboardhttp; no separate server here
 
 // SetReady sets readiness and updates the gauge.
 func SetReady(v bool) {

@@ -32,8 +32,17 @@ export function App() {
   const [provider, setProvider] = useState<FailoverProvider | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type?: 'success' | 'error' | 'warning' | 'info'; duration?: number }>>([]);
   const [authState, setAuthState] = useState<AuthState>(authService.state);
-  const [authStatus, setAuthStatus] = useState<{ usersExist: boolean } | null>(null);
+  const [authStatus, setAuthStatus] = useState<{ users_exist: boolean } | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  // Debug logging for auth state
+  console.log('=== RENDER DEBUG ===');
+  console.log('Current authState:', authState);
+  console.log('Current authStatus:', authStatus);
+  console.log('Current isCheckingAuth:', isCheckingAuth);
+  console.log('authStatus type:', typeof authStatus);
+  console.log('authStatus.users_exist:', authStatus?.users_exist);
+  console.log('========================');
   useTheme();
 
   useEffect(() => {
@@ -45,37 +54,46 @@ export function App() {
     };
   }, []);
 
+  // Remove this useEffect as auth status is now checked when provider initializes
+
   useEffect(() => {
-    // Check authentication status
+    // First check auth status via REST API
     const checkAuthStatus = async () => {
+      console.log('Starting auth status check...');
+      
       try {
-        const status = await authService.getAuthStatus();
-        setAuthStatus(status);
-        authService.setAuthStatus(status);
+        const response = await fetch('/api/v1/auth/status');
+        console.log('REST API response status:', response.status);
+        if (response.ok) {
+          const status = await response.json();
+          console.log('Got auth status from REST API:', status);
+          console.log('Setting authStatus to:', status);
+          console.log('Status.users_exist:', status.users_exist);
+          setAuthStatus(status);
+          console.log('setAuthStatus called, will trigger re-render');
+          setIsCheckingAuth(false);
+        } else {
+          console.error('Failed to get auth status from REST API:', response.status);
+          // Fallback: assume no users exist (show first user creation form)
+          const fallbackStatus = { users_exist: false };
+          console.log('Using fallback status:', fallbackStatus);
+          setAuthStatus(fallbackStatus);
+          setIsCheckingAuth(false);
+        }
       } catch (error) {
-        console.error('Failed to check auth status:', error);
-        // Fallback: assume users exist
-        const fallbackStatus = { usersExist: true };
+        console.error('Failed to check auth status from REST API:', error);
+        // Fallback: assume no users exist (show first user creation form)
+        const fallbackStatus = { users_exist: false };
+        console.log('Using fallback status due to error:', fallbackStatus);
         setAuthStatus(fallbackStatus);
-        authService.setAuthStatus(fallbackStatus);
-      } finally {
         setIsCheckingAuth(false);
       }
     };
 
+    // Check auth status first
     checkAuthStatus();
-  }, [authState.isAuthenticated]);
 
-  useEffect(() => {
-    // Initialize provider only if authenticated
-    if (!authState.isAuthenticated) {
-      if (provider) {
-        provider.close();
-        setProvider(null);
-      }
-      return;
-    }
-
+    // Initialize provider for real-time updates
     const failoverProvider = new FailoverProvider(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
     let restToastTimer: number | null = null;
     
@@ -84,19 +102,10 @@ export function App() {
         setProvider(failoverProvider);
         authService.setProvider(failoverProvider);
         console.log('Provider connected');
-        
-        // Check auth status now that provider is available
-        authService.getAuthStatus()
-          .then((status) => {
-            setAuthStatus(status);
-            authService.setAuthStatus(status);
-          })
-          .catch((error) => {
-            console.error('Failed to check auth status after provider connection:', error);
-          });
       })
       .catch((error) => {
         console.error('Failed to connect provider:', error);
+        // Provider connection failure doesn't affect auth status check
       });
 
     // Handle hash changes for routing
@@ -148,7 +157,7 @@ export function App() {
       offStatus && offStatus();
       failoverProvider.close();
     };
-  }, [authState.isAuthenticated]);
+  }, []); // Initialize provider once on mount
 
   const handleTabChange = (tabId: string) => {
     // Update hash and rely on the hashchange listener to set active tab.
@@ -172,19 +181,33 @@ export function App() {
 
   // Show login form if not authenticated
   if (!authState.isAuthenticated) {
+    console.log('Not authenticated, checking status...');
+    console.log('isCheckingAuth:', isCheckingAuth);
+    console.log('authStatus:', authStatus);
+    
     if (isCheckingAuth) {
+      console.log('Still checking auth, showing loading...');
       return <LoadingSpinner text="Checking authentication status..." className="min-h-screen" />;
     }
 
     // If we don't have auth status yet, show loading
     if (!authStatus) {
+      console.log('No auth status yet, showing loading...');
       return <LoadingSpinner text="Loading authentication status..." className="min-h-screen" />;
     }
+
+    // Debug logging
+    console.log('Auth status:', authStatus);
+    console.log('Auth status type:', typeof authStatus);
+    console.log('Auth status keys:', authStatus ? Object.keys(authStatus) : 'null');
+    console.log('Users exist:', authStatus?.users_exist);
+    console.log('Users exist type:', typeof authStatus?.users_exist);
+    console.log('Is first user:', !authStatus?.users_exist);
 
     return (
       <LoginForm
         onLogin={() => setActiveTab('overview')}
-        isFirstUser={!authStatus.usersExist}
+        isFirstUser={!authStatus.users_exist}
       />
     );
   }

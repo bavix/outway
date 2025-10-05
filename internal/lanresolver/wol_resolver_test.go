@@ -216,16 +216,6 @@ func TestWOLResolver_GetWOLStatus(t *testing.T) {
 	assert.Contains(t, status, "valid_interfaces")
 }
 
-func TestWOLResolver_GetWOLDevices(t *testing.T) {
-	t.Parallel()
-	t.Skip("Test requires access to unexported fields - needs refactoring")
-}
-
-func TestWOLResolver_GetWOLDevices_WithInvalidMAC(t *testing.T) {
-	t.Parallel()
-	t.Skip("Test requires access to unexported fields - needs refactoring")
-}
-
 func TestWOLResolver_WakeDevice_ByHostname(t *testing.T) {
 	t.Parallel()
 
@@ -306,26 +296,6 @@ func TestWOLResolver_WakeDevice_NotFound(t *testing.T) {
 	assert.Equal(t, "device not found", response.Message)
 }
 
-func TestWOLResolver_WakeDevice_InvalidMAC(t *testing.T) {
-	t.Parallel()
-	t.Skip("Test requires access to unexported fields - needs refactoring")
-}
-
-func TestWOLResolver_WakeAllDevices(t *testing.T) {
-	t.Parallel()
-	t.Skip("Test requires access to unexported fields - needs refactoring")
-}
-
-func TestWOLResolver_WakeAllDevices_WithInvalidMAC(t *testing.T) {
-	t.Parallel()
-	t.Skip("Test requires access to unexported fields - needs refactoring")
-}
-
-func TestWOLResolver_GetWOLDeviceByHostname(t *testing.T) {
-	t.Parallel()
-	t.Skip("Test requires access to unexported fields - needs refactoring")
-}
-
 func TestWOLResolver_GetWOLDeviceByHostname_NotFound(t *testing.T) {
 	t.Parallel()
 
@@ -337,16 +307,6 @@ func TestWOLResolver_GetWOLDeviceByHostname_NotFound(t *testing.T) {
 
 	device := resolver.GetWOLDeviceByHostname("nonexistent")
 	assert.Nil(t, device)
-}
-
-func TestWOLResolver_GetWOLDeviceByMAC(t *testing.T) {
-	t.Parallel()
-	t.Skip("Test requires access to unexported fields - needs refactoring")
-}
-
-func TestWOLResolver_GetWOLDeviceByMAC_CaseInsensitive(t *testing.T) {
-	t.Parallel()
-	t.Skip("Test requires access to unexported fields - needs refactoring")
 }
 
 func TestWOLResolver_GetWOLDeviceByMAC_NotFound(t *testing.T) {

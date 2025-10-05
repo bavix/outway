@@ -1,4 +1,4 @@
-package adminhttp
+package dashboardhttp
 
 import (
 	"context"

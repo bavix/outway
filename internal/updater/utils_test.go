@@ -156,7 +156,7 @@ func TestUpdater_isNewerVersion(t *testing.T) {
 			t.Parallel()
 
 			if tt.skip {
-				t.Skip("Skipping test due to updater.New failure")
+				return // Skip test due to updater.New failure
 			}
 
 			// Test isNewerVersion through updater instance
@@ -188,7 +188,7 @@ func TestUpdater_isNewerVersion_EdgeCases(t *testing.T) {
 			t.Parallel()
 
 			if tt.skip {
-				t.Skip("Skipping test due to updater.New failure")
+				return // Skip test due to updater.New failure
 			}
 
 			// Test isNewerVersion through updater instance
@@ -323,7 +323,7 @@ func TestUpdater_isNewerVersion_RealWorldExamples(t *testing.T) {
 			t.Parallel()
 
 			if tt.skip {
-				t.Skip("Skipping test due to updater.New failure")
+				return // Skip test due to updater.New failure
 			}
 
 			// Test isNewerVersion through updater instance
