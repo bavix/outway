@@ -15,6 +15,7 @@ import (
 const (
 	MinEmailLength    = 5
 	MaxEmailLength    = 100
+	DefaultRole       = "user"
 	Argon2Memory      = 64 * 1024 // 64 MB
 	Argon2Iterations  = 3
 	Argon2Parallelism = 2
@@ -25,7 +26,7 @@ const (
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
-// isValidEmail validates email format
+// isValidEmail validates email format.
 func isValidEmail(email string) bool {
 	return emailRegex.MatchString(email)
 }
@@ -62,7 +63,7 @@ type UserResponse struct {
 	Permissions []Permission `json:"permissions,omitempty"`
 }
 
-// Permission represents a user permission
+// Permission represents a user permission.
 type Permission struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -190,7 +191,7 @@ func ValidateUserRequest(req *UserRequest) error {
 	}
 
 	if req.Role == "" {
-		req.Role = "user" // Default role
+		req.Role = DefaultRole // Default role
 	}
 
 	// Validate role
@@ -210,7 +211,7 @@ func (u *User) ToResponse() *UserResponse {
 	}
 }
 
-// GetRolePermissions returns permissions for a given role
+// GetRolePermissions returns permissions for a given role.
 func GetRolePermissions(role string) []Permission {
 	switch role {
 	case "admin":
@@ -222,7 +223,7 @@ func GetRolePermissions(role string) []Permission {
 	}
 }
 
-// getAdminPermissions returns admin permissions
+// getAdminPermissions returns admin permissions.
 func getAdminPermissions() []Permission {
 	return []Permission{
 		// System permissions
@@ -273,7 +274,7 @@ func getAdminPermissions() []Permission {
 	}
 }
 
-// getUserPermissions returns user permissions
+// getUserPermissions returns user permissions.
 func getUserPermissions() []Permission {
 	return []Permission{
 		// System permissions (limited)

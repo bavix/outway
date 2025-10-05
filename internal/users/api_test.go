@@ -18,7 +18,7 @@ func TestAPIHandler_GetRoles(t *testing.T) {
 	cfg := &MockConfig{}
 	handler := NewAPIHandler(cfg)
 
-	req := httptest.NewRequest("GET", "/api/v1/users/roles", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/roles", nil)
 	w := httptest.NewRecorder()
 
 	router := mux.NewRouter()
@@ -28,26 +28,40 @@ func TestAPIHandler_GetRoles(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
+
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
 	assert.Contains(t, response, "roles")
 	assert.Contains(t, response, "count")
 
-	roles := response["roles"].([]interface{})
+	roles, ok := response["roles"].([]interface{})
+	require.True(t, ok)
 	assert.Len(t, roles, 2)
 
 	// Check admin role
-	adminRole := roles[0].(map[string]interface{})
+	adminRole, ok := roles[0].(map[string]interface{})
+	require.True(t, ok)
 	assert.Equal(t, "admin", adminRole["name"])
-	assert.Contains(t, adminRole["description"].(string), "Full system access")
-	assert.Greater(t, int(adminRole["permissions_count"].(float64)), 0)
+	description, ok := adminRole["description"].(string)
+	require.True(t, ok)
+	assert.Contains(t, description, "Full system access")
+
+	permissionsCount, ok := adminRole["permissions_count"].(float64)
+	require.True(t, ok)
+	assert.Positive(t, int(permissionsCount))
 
 	// Check user role
-	userRole := roles[1].(map[string]interface{})
+	userRole, ok := roles[1].(map[string]interface{})
+	require.True(t, ok)
 	assert.Equal(t, "user", userRole["name"])
-	assert.Contains(t, userRole["description"].(string), "Limited access")
-	assert.Greater(t, int(userRole["permissions_count"].(float64)), 0)
+	userDescription, ok := userRole["description"].(string)
+	require.True(t, ok)
+	assert.Contains(t, userDescription, "Limited access")
+
+	userPermissionsCount, ok := userRole["permissions_count"].(float64)
+	require.True(t, ok)
+	assert.Positive(t, int(userPermissionsCount))
 }
 
 func TestAPIHandler_GetRolePermissions(t *testing.T) {
@@ -82,7 +96,7 @@ func TestAPIHandler_GetRolePermissions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/api/v1/users/roles/"+tt.role+"/permissions", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/users/roles/"+tt.role+"/permissions", nil)
 			w := httptest.NewRecorder()
 
 			router := mux.NewRouter()
@@ -93,6 +107,7 @@ func TestAPIHandler_GetRolePermissions(t *testing.T) {
 
 			if !tt.expectError {
 				var response map[string]interface{}
+
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 
@@ -103,11 +118,13 @@ func TestAPIHandler_GetRolePermissions(t *testing.T) {
 
 				assert.Equal(t, tt.role, response["role"])
 
-				permissions := response["permissions"].([]interface{})
-				assert.Greater(t, len(permissions), 0)
+				permissions, ok := response["permissions"].([]interface{})
+				require.True(t, ok)
+				assert.NotEmpty(t, permissions)
 
-				categories := response["categories"].(map[string]interface{})
-				assert.Greater(t, len(categories), 0)
+				categories, ok := response["categories"].(map[string]interface{})
+				require.True(t, ok)
+				assert.NotEmpty(t, categories)
 			}
 		})
 	}
@@ -189,8 +206,9 @@ func TestAPIHandler_CreateUser(t *testing.T) {
 			userDataJSON, err := json.Marshal(tt.userData)
 			require.NoError(t, err)
 
-			req := httptest.NewRequest("POST", "/api/v1/users", bytes.NewBuffer(userDataJSON))
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBuffer(userDataJSON))
 			req.Header.Set("Content-Type", "application/json")
+
 			w := httptest.NewRecorder()
 
 			router := mux.NewRouter()
@@ -201,11 +219,13 @@ func TestAPIHandler_CreateUser(t *testing.T) {
 
 			if tt.expectError {
 				var response map[string]string
+
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 				assert.Contains(t, response["error"], tt.errorMessage)
 			} else {
 				var response UserResponse
+
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
 				assert.Equal(t, tt.userData.Email, response.Email)
@@ -233,7 +253,7 @@ func TestAPIHandler_GetUsers(t *testing.T) {
 	}
 	handler := NewAPIHandler(cfg)
 
-	req := httptest.NewRequest("GET", "/api/v1/users", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
 	w := httptest.NewRecorder()
 
 	router := mux.NewRouter()
@@ -243,19 +263,22 @@ func TestAPIHandler_GetUsers(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
+
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
 	assert.Contains(t, response, "users")
 	assert.Contains(t, response, "count")
-	assert.Equal(t, float64(2), response["count"])
+	assert.InEpsilon(t, float64(2), response["count"], 0.01)
 
-	users := response["users"].([]interface{})
+	users, ok := response["users"].([]interface{})
+	require.True(t, ok)
 	assert.Len(t, users, 2)
 
 	// Check that passwords are not exposed
 	for _, userInterface := range users {
-		user := userInterface.(map[string]interface{})
+		user, ok := userInterface.(map[string]interface{})
+		require.True(t, ok)
 		assert.NotContains(t, user, "password")
 		assert.Contains(t, user, "email")
 		assert.Contains(t, user, "role")
@@ -271,22 +294,31 @@ func TestGetRolePermissions(t *testing.T) {
 		expectedCategories []string
 	}{
 		{
-			name:               "admin role",
-			role:               "admin",
-			expectedCount:      22, // Should have many permissions
-			expectedCategories: []string{"System", "Users", "Devices", "DNS", "Configuration", "Updates", "Cache", "History", "Statistics", "Overview", "Info"},
+			name:          "admin role",
+			role:          "admin",
+			expectedCount: 22, // Should have many permissions
+			expectedCategories: []string{
+				"System", "Users", "Devices", "DNS", "Configuration",
+				"Updates", "Cache", "History", "Statistics", "Overview", "Info",
+			},
 		},
 		{
-			name:               "user role",
-			role:               "user",
-			expectedCount:      13, // Should have fewer permissions
-			expectedCategories: []string{"System", "Devices", "DNS", "Configuration", "Updates", "Cache", "History", "Statistics", "Overview", "Info"},
+			name:          "user role",
+			role:          "user",
+			expectedCount: 13, // Should have fewer permissions
+			expectedCategories: []string{
+				"System", "Devices", "DNS", "Configuration", "Updates",
+				"Cache", "History", "Statistics", "Overview", "Info",
+			},
 		},
 		{
-			name:               "unknown role",
-			role:               "unknown",
-			expectedCount:      13, // Should default to user permissions
-			expectedCategories: []string{"System", "Devices", "DNS", "Configuration", "Updates", "Cache", "History", "Statistics", "Overview", "Info"},
+			name:          "unknown role",
+			role:          "unknown",
+			expectedCount: 13, // Should default to user permissions
+			expectedCategories: []string{
+				"System", "Devices", "DNS", "Configuration", "Updates",
+				"Cache", "History", "Statistics", "Overview", "Info",
+			},
 		},
 	}
 
@@ -294,7 +326,7 @@ func TestGetRolePermissions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			permissions := GetRolePermissions(tt.role)
 
-			assert.Equal(t, tt.expectedCount, len(permissions))
+			assert.Len(t, permissions, tt.expectedCount)
 
 			// Check that all permissions have required fields
 			for _, perm := range permissions {
@@ -332,8 +364,9 @@ func TestAPIHandler_CreateUser_Duplicate(t *testing.T) {
 	userDataJSON, err := json.Marshal(userData)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest("POST", "/api/v1/users", bytes.NewBuffer(userDataJSON))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBuffer(userDataJSON))
 	req.Header.Set("Content-Type", "application/json")
+
 	w := httptest.NewRecorder()
 
 	router := mux.NewRouter()
@@ -343,8 +376,9 @@ func TestAPIHandler_CreateUser_Duplicate(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w.Code)
 
 	// Now try to create the same user again
-	req2 := httptest.NewRequest("POST", "/api/v1/users", bytes.NewBuffer(userDataJSON))
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewBuffer(userDataJSON))
 	req2.Header.Set("Content-Type", "application/json")
+
 	w2 := httptest.NewRecorder()
 
 	router.ServeHTTP(w2, req2)
@@ -352,6 +386,7 @@ func TestAPIHandler_CreateUser_Duplicate(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, w2.Code)
 
 	var response map[string]string
+
 	err = json.Unmarshal(w2.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Contains(t, response["error"], "user already exists")

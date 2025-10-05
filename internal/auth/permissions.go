@@ -1,65 +1,65 @@
 package auth
 
-// Permission represents a specific permission in the system
+// Permission represents a specific permission in the system.
 type Permission string
 
 const (
-	// System permissions
+	// System permissions.
 	PermissionViewSystem   Permission = "system:view"
 	PermissionManageSystem Permission = "system:manage"
 
-	// User management permissions
+	// User management permissions.
 	PermissionViewUsers   Permission = "users:view"
 	PermissionCreateUsers Permission = "users:create"
 	PermissionUpdateUsers Permission = "users:update"
 	PermissionDeleteUsers Permission = "users:delete"
 
-	// Device management permissions
+	// Device management permissions.
 	PermissionViewDevices   Permission = "devices:view"
 	PermissionManageDevices Permission = "devices:manage"
 	PermissionWakeDevices   Permission = "devices:wake"
 
-	// DNS management permissions
+	// DNS management permissions.
 	PermissionViewDNS   Permission = "dns:view"
 	PermissionManageDNS Permission = "dns:manage"
 
-	// Configuration permissions
+	// Configuration permissions.
 	PermissionViewConfig   Permission = "config:view"
 	PermissionManageConfig Permission = "config:manage"
 
-	// Update permissions
+	// Update permissions.
 	PermissionViewUpdates   Permission = "updates:view"
 	PermissionManageUpdates Permission = "updates:manage"
 
-	// Cache permissions
+	// Cache permissions.
 	PermissionViewCache   Permission = "cache:view"
 	PermissionManageCache Permission = "cache:manage"
 
-	// History permissions
+	// History permissions.
 	PermissionViewHistory Permission = "history:view"
 
-	// Statistics permissions
+	// Statistics permissions.
 	PermissionViewStats Permission = "stats:view"
 
-	// Overview permissions
+	// Overview permissions.
 	PermissionViewOverview Permission = "overview:view"
 
-	// Info permissions
+	// Info permissions.
 	PermissionViewInfo Permission = "info:view"
 
-	// Resolve permissions
+	// Resolve permissions.
 	PermissionViewResolve Permission = "resolve:view"
 )
 
-// Role represents a user role with associated permissions
+// Role represents a user role with associated permissions.
 type Role struct {
 	Name        string       `json:"name"`
 	Permissions []Permission `json:"permissions"`
 }
 
-// Predefined roles
-var (
-	RoleAdmin = Role{
+// GetRoleAdmin returns the admin role.
+func GetRoleAdmin() Role {
+	return Role{
 		Name: "admin",
 		Permissions: []Permission{
 			PermissionViewSystem,
@@ -86,8 +86,11 @@ var (
 			PermissionViewResolve,
 		},
 	}
+}
 
-	RoleUser = Role{
+// GetRoleUser returns the user role.
+func GetRoleUser() Role {
+	return Role{
 		Name: "user",
 		Permissions: []Permission{
 			PermissionViewSystem,    // View system overview
@@ -105,46 +108,55 @@ var (
 			PermissionViewResolve,   // Test DNS resolution
 		},
 	}
-)
+}
 
-// GetRole returns a role by name
+// GetRole returns a role by name.
 func GetRole(name string) *Role {
 	switch name {
 	case "admin":
-		return &RoleAdmin
+		role := GetRoleAdmin()
+
+		return &role
 	case "user":
-		return &RoleUser
+		role := GetRoleUser()
+
+		return &role
 	default:
-		return &RoleUser // Default to user role for unknown roles
+		role := GetRoleUser() // Default to user role for unknown roles
+
+		return &role
 	}
 }
 
-// HasPermission checks if a role has a specific permission
+// HasPermission checks if a role has a specific permission.
 func (r *Role) HasPermission(permission Permission) bool {
 	for _, p := range r.Permissions {
 		if p == permission {
 			return true
 		}
 	}
+
 	return false
 }
 
-// HasAnyPermission checks if a role has any of the specified permissions
+// HasAnyPermission checks if a role has any of the specified permissions.
 func (r *Role) HasAnyPermission(permissions ...Permission) bool {
 	for _, permission := range permissions {
 		if r.HasPermission(permission) {
 			return true
 		}
 	}
+
 	return false
 }
 
-// HasAllPermissions checks if a role has all of the specified permissions
+// HasAllPermissions checks if a role has all of the specified permissions.
 func (r *Role) HasAllPermissions(permissions ...Permission) bool {
 	for _, permission := range permissions {
 		if !r.HasPermission(permission) {
 			return false
 		}
 	}
+
 	return true
 }

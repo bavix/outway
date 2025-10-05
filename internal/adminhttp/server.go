@@ -667,12 +667,14 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) { //nolint:cyc
 
 		if token == "" {
 			http.Error(w, "authorization token required", http.StatusUnauthorized)
+
 			return
 		}
 
 		_, err := s.authService.ValidateToken(token)
 		if err != nil {
 			http.Error(w, "invalid token", http.StatusUnauthorized)
+
 			return
 		}
 	}

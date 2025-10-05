@@ -13,7 +13,7 @@ import (
 	"github.com/bavix/outway/internal/config"
 )
 
-// ConfigInterface defines the interface for configuration operations
+// ConfigInterface defines the interface for configuration operations.
 type ConfigInterface interface {
 	Save() error
 	Load() error
@@ -21,7 +21,7 @@ type ConfigInterface interface {
 	SetUsers(users []config.UserConfig)
 }
 
-// ConfigWrapper wraps config.Config to implement ConfigInterface
+// ConfigWrapper wraps config.Config to implement ConfigInterface.
 type ConfigWrapper struct {
 	*config.Config
 }
@@ -393,9 +393,11 @@ func (h *APIHandler) updateUser(user *config.UserConfig, req *UserRequest) error
 	for i := range users {
 		if users[i].Email == user.Email {
 			users[i] = *user
+
 			break
 		}
 	}
+
 	h.config.SetUsers(users)
 
 	// Save config

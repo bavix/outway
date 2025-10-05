@@ -277,9 +277,11 @@ func (s *Service) Refresh(req *RefreshRequest) (*RefreshResponse, error) {
 
 	// Generate new tokens (need auth mutex for token generation)
 	s.authMu.Lock()
+
 	accessToken, err := s.generateAccessToken(user.Email, user.Role)
 	if err != nil {
 		s.authMu.Unlock()
+
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 

@@ -4,7 +4,7 @@ import (
 	"github.com/bavix/outway/internal/config"
 )
 
-// MockConfig is a mock implementation of config.Config for testing
+// MockConfig is a mock implementation of config.Config for testing.
 type MockConfig struct {
 	Users     []config.UserConfig
 	SaveError error

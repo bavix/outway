@@ -145,6 +145,7 @@ func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 			if !ok {
 				render.Status(r, http.StatusUnauthorized)
 				render.JSON(w, r, map[string]string{"error": "authentication required"})
+
 				return
 			}
 
@@ -153,6 +154,7 @@ func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 			if !userRole.HasPermission(permission) {
 				render.Status(r, http.StatusForbidden)
 				render.JSON(w, r, map[string]string{"error": "insufficient permissions"})
+
 				return
 			}
 
@@ -171,6 +173,7 @@ func RequireAnyPermission(permissions ...Permission) func(http.Handler) http.Han
 			if !ok {
 				render.Status(r, http.StatusUnauthorized)
 				render.JSON(w, r, map[string]string{"error": "authentication required"})
+
 				return
 			}
 
@@ -179,6 +182,7 @@ func RequireAnyPermission(permissions ...Permission) func(http.Handler) http.Han
 			if !userRole.HasAnyPermission(permissions...) {
 				render.Status(r, http.StatusForbidden)
 				render.JSON(w, r, map[string]string{"error": "insufficient permissions"})
+
 				return
 			}
 
@@ -197,6 +201,7 @@ func RequireAllPermissions(permissions ...Permission) func(http.Handler) http.Ha
 			if !ok {
 				render.Status(r, http.StatusUnauthorized)
 				render.JSON(w, r, map[string]string{"error": "authentication required"})
+
 				return
 			}
 
@@ -205,6 +210,7 @@ func RequireAllPermissions(permissions ...Permission) func(http.Handler) http.Ha
 			if !userRole.HasAllPermissions(permissions...) {
 				render.Status(r, http.StatusForbidden)
 				render.JSON(w, r, map[string]string{"error": "insufficient permissions"})
+
 				return
 			}
 

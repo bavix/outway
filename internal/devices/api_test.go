@@ -30,7 +30,8 @@ func TestAPIHandler_GetDevices(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -74,7 +75,8 @@ func TestAPIHandler_GetDevice(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -104,7 +106,8 @@ func TestAPIHandler_GetDevice_NotFound(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -147,7 +150,8 @@ func TestAPIHandler_AddDevice(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -178,7 +182,8 @@ func TestAPIHandler_AddDevice_InvalidJSON(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -225,7 +230,8 @@ func TestAPIHandler_UpdateDevice(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -259,7 +265,8 @@ func TestAPIHandler_DeleteDevice(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -296,7 +303,8 @@ func TestAPIHandler_GetStats(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -337,7 +345,8 @@ func TestAPIHandler_GetOnlineDevices(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -384,7 +393,8 @@ func TestAPIHandler_GetWakeableDevices(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)
@@ -427,7 +437,8 @@ func TestAPIHandler_GetDevicesByType(t *testing.T) {
 
 	// Create router and register handler
 	router := mux.NewRouter()
-	handler.RegisterRoutes(router)
+	api := router.PathPrefix("/api/v1").Subrouter()
+	handler.RegisterRoutes(api)
 
 	// Serve request
 	router.ServeHTTP(w, req)

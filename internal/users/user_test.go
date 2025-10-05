@@ -118,9 +118,10 @@ func TestValidateUserRequest(t *testing.T) {
 			err := ValidateUserRequest(&tt.request)
 
 			if tt.expectError {
-				assert.Error(t, err)
+				require.Error(t, err)
+
 				if tt.errorType != nil {
-					assert.ErrorIs(t, err, tt.errorType)
+					require.ErrorIs(t, err, tt.errorType)
 				}
 			} else {
 				assert.NoError(t, err)
@@ -205,11 +206,11 @@ func TestVerifyPassword_InvalidHash(t *testing.T) {
 			valid, err := VerifyPassword("password", tt.hash)
 
 			if tt.expectError {
-				assert.Error(t, err)
+				require.Error(t, err)
 				assert.False(t, valid)
 			} else {
 				// For valid format but wrong hash, should return false without error
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.False(t, valid)
 			}
 		})
@@ -231,7 +232,8 @@ func TestUser_ToResponse(t *testing.T) {
 	// Password should not be in response (it's not included in UserResponse struct)
 
 	// Check that permissions are properly set
-	assert.Greater(t, len(response.Permissions), 0)
+	assert.NotEmpty(t, response.Permissions)
+
 	for _, perm := range response.Permissions {
 		assert.NotEmpty(t, perm.Name)
 		assert.NotEmpty(t, perm.Description)
@@ -301,10 +303,11 @@ func TestDefaultArgon2Params(t *testing.T) {
 	assert.Equal(t, uint32(Argon2KeyLength), params.KeyLength)
 }
 
-// Helper function to split hash into parts
+// Helper function to split hash into parts.
 func splitHash(hash string) []string {
 	parts := make([]string, 0)
 	current := ""
+
 	for _, char := range hash {
 		if char == '$' {
 			parts = append(parts, current)
@@ -313,8 +316,10 @@ func splitHash(hash string) []string {
 			current += string(char)
 		}
 	}
+
 	if current != "" {
 		parts = append(parts, current)
 	}
+
 	return parts
 }
