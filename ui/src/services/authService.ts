@@ -20,6 +20,9 @@ export class AuthService {
 
   private listeners: Set<(state: AuthState) => void> = new Set();
   private refreshTimer: NodeJS.Timeout | null = null;
+  private onAuthSuccessCallback: (() => void) | null = null;
+  private isRefreshing: boolean = false;
+  private refreshPromise: Promise<RefreshResponse> | null = null;
 
   constructor() {
     this.loadFromStorage();
@@ -55,6 +58,11 @@ export class AuthService {
 
   setProvider(provider: any) {
     this.provider = provider;
+  }
+
+  // Set callback to be called after successful authentication
+  setOnAuthSuccess(callback: () => void) {
+    this.onAuthSuccessCallback = callback;
   }
 
   private notifyListeners(): void {
@@ -156,6 +164,12 @@ export class AuthService {
     });
 
     this.setupRefreshTimer();
+    
+    // Call callback after successful authentication
+    if (this.onAuthSuccessCallback) {
+      this.onAuthSuccessCallback();
+    }
+    
     return data;
   }
 
@@ -182,20 +196,41 @@ export class AuthService {
     });
 
     this.setupRefreshTimer();
+    
+    // Call callback after successful authentication
+    if (this.onAuthSuccessCallback) {
+      this.onAuthSuccessCallback();
+    }
+    
     return data;
   }
 
   async refreshToken(): Promise<RefreshResponse> {
+    // If already refreshing, return the existing promise
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
     if (!this.state.refreshToken) {
       throw new Error('No refresh token available');
     }
 
-    // Check if refresh token is expired
-    if (this.isTokenExpired(this.state.refreshToken)) {
-      console.log('Refresh token expired, logging out...');
-      this.logout();
-      throw new Error('Refresh token expired');
+    // Set refreshing flag and create promise
+    this.isRefreshing = true;
+    this.refreshPromise = this.performRefresh();
+
+    try {
+      const result = await this.refreshPromise;
+      return result;
+    } finally {
+      this.isRefreshing = false;
+      this.refreshPromise = null;
     }
+  }
+
+  private async performRefresh(): Promise<RefreshResponse> {
+    // Note: Refresh token expiration is checked on the server side
+    // We don't need to check it here as it's not a JWT token
 
     const response = await fetch('/api/v1/auth/refresh', {
       method: 'POST',
@@ -217,6 +252,7 @@ export class AuthService {
       refreshToken: data.refresh_token,
     });
 
+    // Setup new refresh timer with the new token
     this.setupRefreshTimer();
     return data;
   }
@@ -234,6 +270,8 @@ export class AuthService {
     });
     this.clearStorage();
     this.clearRefreshTimer();
+    this.isRefreshing = false;
+    this.refreshPromise = null;
   }
 
   // Token management
@@ -262,14 +300,18 @@ export class AuthService {
     // Parse JWT token to get expiration time
     try {
       const tokenPayload = this.parseJWT(this.state.accessToken);
-      if (!tokenPayload || !tokenPayload.exp) return;
+      if (!tokenPayload || !tokenPayload.exp) {
+        console.warn('Invalid token payload, setting up fallback refresh timer');
+        this.setupFallbackRefreshTimer();
+        return;
+      }
 
       const now = Math.floor(Date.now() / 1000);
       const exp = tokenPayload.exp;
       const timeUntilExpiry = (exp - now) * 1000; // Convert to milliseconds
 
-      // Refresh token 1 minute before expiry
-      const refreshTime = Math.max(timeUntilExpiry - 60000, 1000); // At least 1 second
+      // Refresh token 2 minutes before expiry (more aggressive)
+      const refreshTime = Math.max(timeUntilExpiry - 120000, 1000); // At least 1 second
 
       console.log(`Token expires in ${Math.floor(timeUntilExpiry / 1000)}s, will refresh in ${Math.floor(refreshTime / 1000)}s`);
 
@@ -284,16 +326,22 @@ export class AuthService {
       }, refreshTime);
     } catch (error) {
       console.error('Failed to parse JWT token for refresh timer:', error);
-      // Fallback to 4-minute interval
-      this.refreshTimer = setTimeout(async () => {
-        try {
-          await this.refreshToken();
-        } catch (error) {
-          console.error('Auto-refresh failed:', error);
-          this.logout();
-        }
-      }, 4 * 60 * 1000);
+      this.setupFallbackRefreshTimer();
     }
+  }
+
+  // Fallback refresh timer for when JWT parsing fails
+  private setupFallbackRefreshTimer(): void {
+    // Set up a more frequent refresh timer as fallback
+    this.refreshTimer = setTimeout(async () => {
+      try {
+        console.log('Fallback auto-refresh...');
+        await this.refreshToken();
+      } catch (error) {
+        console.error('Fallback auto-refresh failed:', error);
+        this.logout();
+      }
+    }, 3 * 60 * 1000); // Every 3 minutes
   }
 
   // Parse JWT token to extract payload
@@ -399,6 +447,7 @@ export class AuthService {
     if (response.status === 401) {
       // Token expired, try to refresh
       try {
+        console.log('Received 401, attempting token refresh...');
         await this.refreshToken();
         // Retry with new token
         const newHeaders = {
@@ -410,6 +459,7 @@ export class AuthService {
           headers: newHeaders,
         });
       } catch (error) {
+        console.error('Token refresh failed after 401:', error);
         this.logout();
         throw new Error('Authentication failed');
       }

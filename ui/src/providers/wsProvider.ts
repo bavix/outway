@@ -35,15 +35,18 @@ export class WSProvider implements Provider {
   constructor(private url: string) {}
 
   async connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
         const wsUrl = this.url.replace(/^http/, 'ws');
-        const token = authService.getAccessToken();
+        let token = authService.getAccessToken();
         
         if (!token) {
           reject(new Error('No access token available'));
           return;
         }
+
+        // Use the current token, let the server handle auth
+        // If token is expired, server will return 401 and we'll handle it in the app
 
         // Add token to WebSocket URL or headers
         const urlWithToken = `${wsUrl}?token=${encodeURIComponent(token)}`;
