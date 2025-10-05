@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.0 - 2025-10-05
+
+### What's Changed
+
+* Enhance user management and authentication features by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/47
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.3.1...v1.4.0
+
 ## v1.3.1 - 2025-10-04
 
 ### What's Changed
