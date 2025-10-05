@@ -1,4 +1,4 @@
-import { Provider, RuleGroup, Stats, QueryEvent, ServerInfo, HostOverride, ResolveResult, UpstreamItem, OverviewData, CacheDeleteRequest, CacheOpResponse, CacheListResponse, WOLDevicesResponse, WOLInterfacesResponse, WOLConfig, WOLDevice, Device, DevicesResponse, DeviceStats, DeviceWakeRequest, DeviceWakeResponse } from './types.js';
+import { Provider, RuleGroup, Stats, QueryEvent, ServerInfo, HostOverride, ResolveResult, UpstreamItem, OverviewData, CacheDeleteRequest, CacheOpResponse, CacheListResponse, WOLDevicesResponse, WOLInterfacesResponse, WOLConfig, WOLDevice, Device, DevicesResponse, DeviceStats, DeviceWakeRequest, DeviceWakeResponse, LoginRequest, LoginResponse, RefreshResponse, FirstUserRequest, UserRequest, UserResponse, UsersResponse, AuthStatusResponse, RolesResponse, RolePermissionsResponse } from './types.js';
 import { WSProvider } from './wsProvider.js';
 import { RESTProvider } from './restProvider.js';
 
@@ -477,5 +477,56 @@ export class FailoverProvider implements Provider {
 
   async resolveDevice(id: string): Promise<ResolveResult> {
     return this.restProvider.resolveDevice(id);
+  }
+
+  // Authentication methods
+  async getAuthStatus(): Promise<AuthStatusResponse> {
+    return this.restProvider.getAuthStatus();
+  }
+
+  async login(credentials: LoginRequest): Promise<LoginResponse> {
+    return this.restProvider.login(credentials);
+  }
+
+  async refreshToken(refreshToken: string): Promise<RefreshResponse> {
+    return this.restProvider.refreshToken(refreshToken);
+  }
+
+  async createFirstUser(user: FirstUserRequest): Promise<LoginResponse> {
+    return this.restProvider.createFirstUser(user);
+  }
+
+  // User management methods
+  async fetchUsers(): Promise<UsersResponse> {
+    return this.restProvider.fetchUsers();
+  }
+
+  async createUser(user: UserRequest): Promise<UserResponse> {
+    return this.restProvider.createUser(user);
+  }
+
+  async getUser(login: string): Promise<UserResponse> {
+    return this.restProvider.getUser(login);
+  }
+
+  async updateUser(login: string, user: UserRequest): Promise<UserResponse> {
+    return this.restProvider.updateUser(login, user);
+  }
+
+  async deleteUser(login: string): Promise<void> {
+    return this.restProvider.deleteUser(login);
+  }
+
+  async changePassword(login: string, newPassword: string): Promise<void> {
+    return this.restProvider.changePassword(login, newPassword);
+  }
+
+  // Role and permissions
+  async fetchRoles(): Promise<RolesResponse> {
+    return this.restProvider.fetchRoles();
+  }
+
+  async fetchRolePermissions(role: string): Promise<RolePermissionsResponse> {
+    return this.restProvider.fetchRolePermissions(role);
   }
 }

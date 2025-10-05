@@ -23,8 +23,19 @@ import {
   DevicesResponse,
   DeviceStats,
   DeviceWakeRequest,
-  DeviceWakeResponse
+  DeviceWakeResponse,
+  LoginRequest,
+  LoginResponse,
+  RefreshResponse,
+  FirstUserRequest,
+  UserRequest,
+  UserResponse,
+  UsersResponse,
+  AuthStatusResponse,
+  RolesResponse,
+  RolePermissionsResponse
 } from './types.js';
+import { authService } from '../services/authService.js';
 
 export class RESTProvider implements Provider {
   private pollingTimers = new Map<string, number>();
@@ -60,15 +71,48 @@ export class RESTProvider implements Provider {
   }
 
   private async fetchJSON<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const token = authService.getAccessToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...options.headers as Record<string, string>
+    };
+
+    // Add JWT token if available and not an auth endpoint
+    if (token && !endpoint.startsWith('/api/v1/auth/')) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-      },
+      headers,
       ...options
     });
 
     if (!response.ok) {
+      // If 401 and we have a token, try to refresh
+      if (response.status === 401 && token) {
+        try {
+          await authService.refreshToken();
+          // Retry with new token
+          const newToken = authService.getAccessToken();
+          if (newToken) {
+            headers['Authorization'] = `Bearer ${newToken}`;
+            const retryResponse = await fetch(`${this.baseUrl}${endpoint}`, {
+              headers,
+              ...options
+            });
+            if (retryResponse.ok) {
+              const contentType = retryResponse.headers.get('content-type');
+              if (contentType?.includes('application/json')) {
+                return retryResponse.json();
+              }
+              return retryResponse.text() as unknown as T;
+            }
+          }
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+          authService.logout();
+        }
+      }
       throw new Error(`HTTP ${response.status}: ${await response.text()}`);
     }
 
@@ -460,5 +504,76 @@ export class RESTProvider implements Provider {
 
   async resolveDevice(id: string): Promise<ResolveResult> {
     return this.fetchJSON(`/api/v1/devices/${id}/resolve`);
+  }
+
+  // Authentication methods
+  async getAuthStatus(): Promise<AuthStatusResponse> {
+    return this.fetchJSON<AuthStatusResponse>('/api/v1/auth/status');
+  }
+
+  async login(credentials: LoginRequest): Promise<LoginResponse> {
+    return this.fetchJSON('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials)
+    });
+  }
+
+  async refreshToken(refreshToken: string): Promise<RefreshResponse> {
+    return this.fetchJSON('/api/v1/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+  }
+
+  async createFirstUser(user: FirstUserRequest): Promise<LoginResponse> {
+    return this.fetchJSON('/api/v1/auth/first-user', {
+      method: 'POST',
+      body: JSON.stringify(user)
+    });
+  }
+
+  // User management methods
+  async fetchUsers(): Promise<UsersResponse> {
+    return this.fetchJSON('/api/v1/users');
+  }
+
+  async createUser(user: UserRequest): Promise<UserResponse> {
+    return this.fetchJSON('/api/v1/users', {
+      method: 'POST',
+      body: JSON.stringify(user)
+    });
+  }
+
+  async getUser(login: string): Promise<UserResponse> {
+    return this.fetchJSON(`/api/v1/users/${login}`);
+  }
+
+  async updateUser(login: string, user: UserRequest): Promise<UserResponse> {
+    return this.fetchJSON(`/api/v1/users/${login}`, {
+      method: 'PUT',
+      body: JSON.stringify(user)
+    });
+  }
+
+  async deleteUser(login: string): Promise<void> {
+    await this.fetchJSON(`/api/v1/users/${login}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async changePassword(login: string, newPassword: string): Promise<void> {
+    await this.fetchJSON(`/api/v1/users/${login}/change-password`, {
+      method: 'POST',
+      body: JSON.stringify({ password: newPassword })
+    });
+  }
+
+  // Role and permissions
+  async fetchRoles(): Promise<RolesResponse> {
+    return this.fetchJSON<RolesResponse>('/api/v1/users/roles');
+  }
+
+  async fetchRolePermissions(role: string): Promise<RolePermissionsResponse> {
+    return this.fetchJSON<RolePermissionsResponse>(`/api/v1/users/roles/${role}/permissions`);
   }
 }

@@ -3,6 +3,7 @@ import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { LoadingSpinner } from '../components/LoadingSpinner';
 import { Toast } from '../components/Toast';
+import { authService } from '../services/authService.js';
 
 interface UpdateInfo {
   current_version: string;
@@ -101,10 +102,7 @@ const Update = ({ provider }: UpdateProps) => {
   const checkForUpdates = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/v1/update/check');
-      if (!response.ok) {
-        throw new Error('Failed to check for updates');
-      }
+      const response = await authService.authenticatedFetch('/api/v1/update/check');
       const data = await response.json();
       setUpdateInfo(data);
     } catch (error) {
@@ -129,7 +127,7 @@ const Update = ({ provider }: UpdateProps) => {
 
     setDownloading(true);
     try {
-      const response = await fetch('/api/v1/update/download', {
+      const response = await authService.authenticatedFetch('/api/v1/update/download', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -159,7 +157,7 @@ const Update = ({ provider }: UpdateProps) => {
     
     const ping = async (): Promise<boolean> => {
       try {
-        const response = await fetch('/api/v1/update/status', { 
+        const response = await authService.authenticatedFetch('/api/v1/update/status', { 
           method: 'HEAD',
           signal: AbortSignal.timeout(5000) // 5 second timeout
         });
@@ -203,7 +201,7 @@ const Update = ({ provider }: UpdateProps) => {
 
     setInstalling(true);
     try {
-      const response = await fetch('/api/v1/update/install', {
+      const response = await authService.authenticatedFetch('/api/v1/update/install', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -261,11 +259,9 @@ const Update = ({ provider }: UpdateProps) => {
     // Load current status
     const loadStatus = async () => {
       try {
-        const response = await fetch('/api/v1/update/status');
-        if (response.ok) {
-          const data = await response.json();
-          setUpdateStatus(data);
-        }
+        const response = await authService.authenticatedFetch('/api/v1/update/status');
+        const data = await response.json();
+        setUpdateStatus(data);
       } catch (error) {
         console.error('Failed to load update status:', error);
       }

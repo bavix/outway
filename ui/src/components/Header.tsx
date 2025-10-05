@@ -8,18 +8,19 @@ interface HeaderProps {
   provider?: FailoverProvider;
 }
 
-export function Header({ onSidebarToggle, provider }: HeaderProps) {
+export function Header({ onSidebarToggle, provider, sidebarCollapsed }: HeaderProps) {
   const [channel, setChannel] = useState<'ws' | 'rest'>('ws');
+  
   useEffect(() => {
     if (!provider || !provider.onStatus) return;
     const off = provider.onStatus!(s => setChannel(s.channel));
     return () => { off && off(); };
   }, [provider]);
   return (
-    <header className="sticky top-0 z-30 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-100 dark:border-gray-700">
-      <div className="flex items-center justify-between h-14 px-4">
-        {/* Left side */}
-        <div className="flex items-center gap-3">
+    <header className={`fixed top-0 z-30 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-100 dark:border-gray-700 transition-all duration-300 ${sidebarCollapsed ? 'left-0 right-0 lg:left-16' : 'left-0 right-0 lg:left-64'}`}>
+      <div className="flex items-center justify-between h-16 px-4">
+        {/* Left side - Hamburger menu */}
+        <div className="flex items-center gap-2">
           {onSidebarToggle && (
             <button
               onClick={onSidebarToggle}
@@ -31,12 +32,6 @@ export function Header({ onSidebarToggle, provider }: HeaderProps) {
               </svg>
             </button>
           )}
-          <div className="flex items-center lg:hidden select-none">
-            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded flex items-center justify-center shadow-sm mr-2">
-              <span className="text-white font-bold text-xs">O</span>
-            </div>
-            <span className="text-sm font-semibold text-gray-900 dark:text-white tracking-tight">Outway</span>
-          </div>
         </div>
 
         {/* Right side */}

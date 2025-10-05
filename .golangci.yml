@@ -27,6 +27,7 @@ linters:
             - golang.org/x/time/rate
             - golang.org/x/mod/semver
             - golang.org/x/sync/singleflight
+            - golang.org/x/crypto/argon2
             - go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
 
 formatters:

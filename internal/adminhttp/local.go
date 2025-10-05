@@ -41,8 +41,7 @@ func NewLocalZonesHandler(
 }
 
 // RegisterRoutes registers local zones API routes.
-func (h *LocalZonesHandler) RegisterRoutes(mux *mux.Router) {
-	api := mux.PathPrefix("/api/v1").Subrouter()
+func (h *LocalZonesHandler) RegisterRoutes(api *mux.Router) {
 	api.HandleFunc("/local/zones", h.handleZones).Methods("GET")
 	api.HandleFunc("/local/leases", h.handleLeases).Methods("GET")
 	api.HandleFunc("/local/resolve", h.handleResolve).Methods("GET")

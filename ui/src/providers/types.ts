@@ -1,3 +1,77 @@
+// Authentication types
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  refresh_token: string;
+  user: {
+    email: string;
+    role: string;
+  };
+}
+
+export interface RefreshRequest {
+  refresh_token: string;
+}
+
+export interface RefreshResponse {
+  access_token: string;
+  refresh_token: string;
+}
+
+export interface FirstUserRequest {
+  email: string;
+  password: string;
+}
+
+export interface Permission {
+  name: string;
+  description: string;
+  category: string;
+}
+
+export interface UserResponse {
+  email: string;
+  role: string;
+  permissions?: Permission[];
+}
+
+export interface UserRequest {
+  email: string;
+  password: string;
+  role: string;
+}
+
+export interface Role {
+  name: string;
+  description: string;
+  permissions_count: number;
+}
+
+export interface RolesResponse {
+  roles: Role[];
+  count: number;
+}
+
+export interface RolePermissionsResponse {
+  role: string;
+  permissions: Permission[];
+  categories: Record<string, Permission[]>;
+  count: number;
+}
+
+export interface UsersResponse {
+  users: UserResponse[];
+  count: number;
+}
+
+export interface AuthStatusResponse {
+  users_exist: boolean;
+}
+
 // Data Transfer Objects (DTOs)
 export interface RuleGroup {
   name: string;
@@ -90,6 +164,22 @@ export interface Provider {
   onHistory(cb: (evs: QueryEvent[]) => void): () => void;
   onHosts(cb: (hosts: HostOverride[]) => void): () => void;
   onUpdateAvailable(cb: (updateInfo: any) => void): () => void;
+  // Authentication methods
+  getAuthStatus(): Promise<AuthStatusResponse>;
+  login(credentials: LoginRequest): Promise<LoginResponse>;
+  refreshToken(refreshToken: string): Promise<RefreshResponse>;
+  createFirstUser(user: FirstUserRequest): Promise<LoginResponse>;
+  // User management
+  fetchUsers(): Promise<UsersResponse>;
+  createUser(user: UserRequest): Promise<UserResponse>;
+  getUser(login: string): Promise<UserResponse>;
+  updateUser(login: string, user: UserRequest): Promise<UserResponse>;
+  deleteUser(login: string): Promise<void>;
+  changePassword(login: string, newPassword: string): Promise<void>;
+  // Role and permissions
+  fetchRoles(): Promise<RolesResponse>;
+  fetchRolePermissions(role: string): Promise<RolePermissionsResponse>;
+  // Data fetching
   fetchRuleGroups(): Promise<RuleGroup[]>;
   createRuleGroup(group: RuleGroup): Promise<void>;
   updateRuleGroup(name: string, group: RuleGroup): Promise<void>;
