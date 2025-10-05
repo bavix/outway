@@ -196,9 +196,9 @@ func TestAPIHandler_CreateUser(t *testing.T) {
 			errorMessage:   "email cannot be empty",
 		},
 		{
-			name: "duplicate user",
+			name: "create user",
 			userData: UserRequest{
-				Email:    "admin@example.com",
+				Email:    "newuser@example.com",
 				Password: "password123",
 				Role:     "admin",
 			},
