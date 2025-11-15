@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.4.3 - 2025-11-15
+
+### What's Changed
+
+* Update dependencies, improve code quality, and enhance functionality by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/74
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.4.2...v1.4.3
+
 ## v1.4.2 - 2025-10-05
 
 ### What's Changed
