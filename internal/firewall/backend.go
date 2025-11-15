@@ -18,7 +18,8 @@ type Backend interface {
 }
 
 // DetectBackend detects the appropriate firewall backend for the current system.
-
+//
+//nolint:ireturn // factory function must return interface to support multiple implementations
 func DetectBackend(ctx context.Context) (Backend, error) {
 	log := zerolog.Ctx(ctx)
 

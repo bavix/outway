@@ -156,16 +156,22 @@ func TestAPIHandler_AddDevice(t *testing.T) {
 	// Serve request
 	router.ServeHTTP(w, req)
 
-	// Check response - should return 501 since not implemented
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	// Check response - should return 201 since implemented
+	assert.Equal(t, http.StatusCreated, w.Code)
 
 	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Contains(t, response, "error")
-	assert.Equal(t, "Add device not implemented", response["error"])
+	assert.Contains(t, response, "id")
+	assert.Contains(t, response, "message")
+	assert.Equal(t, "Device added successfully", response["message"])
+	assert.Equal(t, "New Device", response["name"])
+	assert.Equal(t, "aa:bb:cc:dd:ee:ff", response["mac"])
+	assert.Equal(t, "192.168.1.1", response["ip"])
+	assert.Equal(t, "new.local", response["hostname"])
+	assert.Equal(t, "New Vendor", response["vendor"])
 }
 
 func TestAPIHandler_AddDevice_InvalidJSON(t *testing.T) {
@@ -188,8 +194,8 @@ func TestAPIHandler_AddDevice_InvalidJSON(t *testing.T) {
 	// Serve request
 	router.ServeHTTP(w, req)
 
-	// Check response - should return 501 since not implemented
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	// Check response - should return 400 for invalid JSON
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]any
 
@@ -197,7 +203,7 @@ func TestAPIHandler_AddDevice_InvalidJSON(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, response, "error")
-	assert.Equal(t, "Add device not implemented", response["error"])
+	assert.Contains(t, response["error"], "Invalid request body")
 }
 
 func TestAPIHandler_UpdateDevice(t *testing.T) {
@@ -236,17 +242,21 @@ func TestAPIHandler_UpdateDevice(t *testing.T) {
 	// Serve request
 	router.ServeHTTP(w, req)
 
-	// Check response - should return 501 since not implemented
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	// Check response - should return 200 since implemented
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Contains(t, response, "error")
-	assert.Equal(t, "Update device not implemented", response["error"])
 	assert.Contains(t, response, "id")
+	assert.Contains(t, response, "message")
+	assert.Equal(t, "Device updated successfully", response["message"])
+	assert.Equal(t, "Updated Device", response["name"])
+	assert.Equal(t, "192.168.1.2", response["ip"])
+	assert.Equal(t, "updated.local", response["hostname"])
+	assert.Equal(t, "Updated Vendor", response["vendor"])
 }
 
 func TestAPIHandler_DeleteDevice(t *testing.T) {
@@ -271,17 +281,22 @@ func TestAPIHandler_DeleteDevice(t *testing.T) {
 	// Serve request
 	router.ServeHTTP(w, req)
 
-	// Check response - should return 501 since not implemented
-	assert.Equal(t, http.StatusNotImplemented, w.Code)
+	// Check response - should return 200 since implemented
+	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Contains(t, response, "error")
-	assert.Equal(t, "Delete device not implemented", response["error"])
 	assert.Contains(t, response, "id")
+	assert.Contains(t, response, "message")
+	assert.Equal(t, "Device deleted successfully", response["message"])
+	assert.Equal(t, device.ID, response["id"])
+
+	// Verify device is actually deleted
+	_, exists := manager.GetDeviceByID(device.ID)
+	assert.False(t, exists, "Device should be deleted")
 }
 
 func TestAPIHandler_GetStats(t *testing.T) {
