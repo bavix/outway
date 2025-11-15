@@ -84,7 +84,7 @@ func TestConfigManager_SetConfig(t *testing.T) {
 func testConfigUpdate(t *testing.T, configManager *wol.ConfigManager) {
 	t.Helper()
 	// Test valid updates
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port":    7,
 		"default_timeout": 10.0, // Test float64 conversion
 		"max_retries":     5,
@@ -103,7 +103,7 @@ func testConfigUpdate(t *testing.T, configManager *wol.ConfigManager) {
 	assert.False(t, config.Enabled)
 
 	// Test invalid updates
-	invalidUpdates := map[string]interface{}{
+	invalidUpdates := map[string]any{
 		"default_port": "invalid",
 	}
 
@@ -111,7 +111,7 @@ func testConfigUpdate(t *testing.T, configManager *wol.ConfigManager) {
 	require.Error(t, err)
 
 	// Test unknown key
-	unknownUpdates := map[string]interface{}{
+	unknownUpdates := map[string]any{
 		"unknown_key": "value",
 	}
 
@@ -133,7 +133,7 @@ func TestConfigManager_IsEnabled(t *testing.T) {
 	assert.True(t, manager.IsEnabled())
 
 	// Disable
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"enabled": false,
 	}
 	err := manager.UpdateConfig(updates)
@@ -141,7 +141,7 @@ func TestConfigManager_IsEnabled(t *testing.T) {
 	assert.False(t, manager.IsEnabled())
 
 	// Re-enable
-	updates = map[string]interface{}{
+	updates = map[string]any{
 		"enabled": true,
 	}
 	err = manager.UpdateConfig(updates)
@@ -158,7 +158,7 @@ func TestConfigManager_GetDefaultPort(t *testing.T) {
 	assert.Equal(t, 9, manager.GetDefaultPort())
 
 	// Update port
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port": 7,
 	}
 	err := manager.UpdateConfig(updates)
@@ -175,7 +175,7 @@ func TestConfigManager_GetDefaultTimeout(t *testing.T) {
 	assert.Equal(t, 5*time.Second, manager.GetDefaultTimeout())
 
 	// Update timeout
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_timeout": 10.0,
 	}
 	err := manager.UpdateConfig(updates)
@@ -192,7 +192,7 @@ func TestConfigManager_GetMaxRetries(t *testing.T) {
 	assert.Equal(t, 3, manager.GetMaxRetries())
 
 	// Update retries
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"max_retries": 5,
 	}
 	err := manager.UpdateConfig(updates)
@@ -209,7 +209,7 @@ func TestConfigManager_GetRetryDelay(t *testing.T) {
 	assert.Equal(t, 1*time.Second, manager.GetRetryDelay())
 
 	// Update delay
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"retry_delay": 2.0,
 	}
 	err := manager.UpdateConfig(updates)
@@ -262,7 +262,7 @@ func TestConfigManager_Reset(t *testing.T) {
 	manager := wol.NewConfigManager()
 
 	// Update config
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port": 7,
 		"enabled":      false,
 	}
@@ -288,7 +288,7 @@ func TestConfigManager_Clone(t *testing.T) {
 	manager := wol.NewConfigManager()
 
 	// Update config
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port": 7,
 		"enabled":      false,
 	}
@@ -303,7 +303,7 @@ func TestConfigManager_Clone(t *testing.T) {
 	assert.Equal(t, manager.GetConfig(), clonedManager.GetConfig())
 
 	// Verify they are independent
-	_ = manager.UpdateConfig(map[string]interface{}{"default_port": 8})
+	_ = manager.UpdateConfig(map[string]any{"default_port": 8})
 	assert.NotEqual(t, manager.GetConfig().DefaultPort, clonedManager.GetConfig().DefaultPort)
 }
 
@@ -324,7 +324,7 @@ func TestConfigManager_ConcurrentAccess(t *testing.T) {
 			assert.NotNil(t, config)
 
 			// Update config
-			updates := map[string]interface{}{
+			updates := map[string]any{
 				"default_port": i,
 			}
 			_ = manager.UpdateConfig(updates)
@@ -418,12 +418,12 @@ func TestConfigManager_UpdateConfigTypes(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		updates  map[string]interface{}
+		updates  map[string]any
 		hasError bool
 	}{
 		{
 			name: "valid int types",
-			updates: map[string]interface{}{
+			updates: map[string]any{
 				"default_port": 7,
 				"max_retries":  5,
 			},
@@ -431,7 +431,7 @@ func TestConfigManager_UpdateConfigTypes(t *testing.T) {
 		},
 		{
 			name: "valid float64 types",
-			updates: map[string]interface{}{
+			updates: map[string]any{
 				"default_timeout": 10.0,
 				"retry_delay":     2.0,
 			},
@@ -439,42 +439,42 @@ func TestConfigManager_UpdateConfigTypes(t *testing.T) {
 		},
 		{
 			name: "valid bool type",
-			updates: map[string]interface{}{
+			updates: map[string]any{
 				"enabled": false,
 			},
 			hasError: false,
 		},
 		{
 			name: "invalid string type",
-			updates: map[string]interface{}{
+			updates: map[string]any{
 				"default_port": "invalid",
 			},
 			hasError: true,
 		},
 		{
 			name: "invalid type for timeout",
-			updates: map[string]interface{}{
+			updates: map[string]any{
 				"default_timeout": "invalid",
 			},
 			hasError: true,
 		},
 		{
 			name: "invalid type for retries",
-			updates: map[string]interface{}{
+			updates: map[string]any{
 				"max_retries": "invalid",
 			},
 			hasError: true,
 		},
 		{
 			name: "invalid type for delay",
-			updates: map[string]interface{}{
+			updates: map[string]any{
 				"retry_delay": "invalid",
 			},
 			hasError: true,
 		},
 		{
 			name: "invalid type for enabled",
-			updates: map[string]interface{}{
+			updates: map[string]any{
 				"enabled": "invalid",
 			},
 			hasError: true,
@@ -501,7 +501,7 @@ func TestConfigManager_EdgeCases(t *testing.T) {
 	manager := wol.NewConfigManager()
 
 	// Test empty updates
-	err := manager.UpdateConfig(map[string]interface{}{})
+	err := manager.UpdateConfig(map[string]any{})
 	require.NoError(t, err)
 
 	// Test nil updates
@@ -509,7 +509,7 @@ func TestConfigManager_EdgeCases(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test partial updates
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port": 7,
 	}
 	err = manager.UpdateConfig(updates)
@@ -526,7 +526,7 @@ func TestConfigManager_JSONRoundTrip(t *testing.T) {
 	manager := wol.NewConfigManager()
 
 	// Update config
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port":    7,
 		"default_timeout": 10.0,
 		"max_retries":     5,
@@ -555,7 +555,7 @@ func TestConfigManager_ResetAfterUpdate(t *testing.T) {
 	manager := wol.NewConfigManager()
 
 	// Update config
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port": 7,
 		"enabled":      false,
 	}

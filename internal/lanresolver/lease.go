@@ -88,8 +88,8 @@ func (lm *LeaseManager) LoadLeases() error {
 		return err
 	}
 
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(content), "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -196,7 +196,7 @@ func (lm *LeaseManager) GetLeaseCount() int {
 	return count
 }
 
-// parseLeaseLine parses a single line from the DHCP leases file
+// ParseLeaseLine parses a single line from the DHCP leases file.
 // Format: <expire> <mac> <ip> <hostname> <id>.
 // ParseLeaseLine parses a single lease line (public for testing).
 func (lm *LeaseManager) ParseLeaseLine(line string) *Lease {

@@ -32,7 +32,7 @@ var (
 	ErrSOLPacketSendFailed          = errors.New("failed to send SoL packet")
 )
 
-// Error constructors.
+// ErrDeviceNotFoundWithID returns an error for device not found with ID.
 func ErrDeviceNotFoundWithID(deviceID string) error {
 	return ErrDeviceNotFound
 }
@@ -49,23 +49,23 @@ func ErrDeviceAlreadyExistsWithMAC(mac string) error {
 	return ErrDeviceMACAlreadyExists
 }
 
-func ErrInvalidTypeForDefaultPort(value interface{}) error {
+func ErrInvalidTypeForDefaultPort(value any) error {
 	return ErrConfigCannotBeNil
 }
 
-func ErrInvalidTypeForDefaultTimeout(value interface{}) error {
+func ErrInvalidTypeForDefaultTimeout(value any) error {
 	return ErrConfigCannotBeNil
 }
 
-func ErrInvalidTypeForMaxRetries(value interface{}) error {
+func ErrInvalidTypeForMaxRetries(value any) error {
 	return ErrConfigCannotBeNil
 }
 
-func ErrInvalidTypeForRetryDelay(value interface{}) error {
+func ErrInvalidTypeForRetryDelay(value any) error {
 	return ErrConfigCannotBeNil
 }
 
-func ErrInvalidTypeForEnabled(value interface{}) error {
+func ErrInvalidTypeForEnabled(value any) error {
 	return ErrConfigCannotBeNil
 }
 
@@ -77,7 +77,7 @@ func ErrDefaultPortInvalid(port int) error {
 	return ErrConfigCannotBeNil
 }
 
-func ErrDefaultTimeoutInvalid(timeout interface{}) error {
+func ErrDefaultTimeoutInvalid(timeout any) error {
 	return ErrConfigCannotBeNil
 }
 
@@ -85,7 +85,7 @@ func ErrMaxRetriesInvalid(retries int) error {
 	return ErrConfigCannotBeNil
 }
 
-func ErrRetryDelayInvalid(delay interface{}) error {
+func ErrRetryDelayInvalid(delay any) error {
 	return ErrConfigCannotBeNil
 }
 

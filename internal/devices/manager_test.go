@@ -1,6 +1,7 @@
 package devices_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -292,13 +293,13 @@ func TestDeviceManager_ResolveDevice(t *testing.T) {
 	require.NoError(t, err)
 
 	// Resolve device
-	ips, err := manager.ResolveDevice("test.local")
+	ips, err := manager.ResolveDevice(context.Background(), "test.local")
 	require.NoError(t, err)
 	assert.Len(t, ips, 1)
 	assert.Equal(t, "192.168.1.1", ips[0])
 
 	// Resolve non-existent device
-	_, err = manager.ResolveDevice("non-existent.local")
+	_, err = manager.ResolveDevice(context.Background(), "non-existent.local")
 	require.Error(t, err)
 }
 

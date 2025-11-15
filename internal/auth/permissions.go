@@ -1,53 +1,65 @@
 package auth
 
+import "slices"
+
 // Permission represents a specific permission in the system.
 type Permission string
 
 const (
-	// System permissions.
-	PermissionViewSystem   Permission = "system:view"
+	// PermissionViewSystem grants access to view system information.
+	PermissionViewSystem Permission = "system:view"
+	// PermissionManageSystem grants access to manage system settings.
 	PermissionManageSystem Permission = "system:manage"
 
-	// User management permissions.
-	PermissionViewUsers   Permission = "users:view"
+	// PermissionViewUsers grants access to view users.
+	PermissionViewUsers Permission = "users:view"
+	// PermissionCreateUsers grants access to create users.
 	PermissionCreateUsers Permission = "users:create"
+	// PermissionUpdateUsers grants access to update users.
 	PermissionUpdateUsers Permission = "users:update"
+	// PermissionDeleteUsers grants access to delete users.
 	PermissionDeleteUsers Permission = "users:delete"
 
-	// Device management permissions.
-	PermissionViewDevices   Permission = "devices:view"
+	// PermissionViewDevices grants access to view devices.
+	PermissionViewDevices Permission = "devices:view"
+	// PermissionManageDevices grants access to manage devices.
 	PermissionManageDevices Permission = "devices:manage"
-	PermissionWakeDevices   Permission = "devices:wake"
+	// PermissionWakeDevices grants access to wake devices.
+	PermissionWakeDevices Permission = "devices:wake"
 
-	// DNS management permissions.
-	PermissionViewDNS   Permission = "dns:view"
+	// PermissionViewDNS grants access to view DNS configuration.
+	PermissionViewDNS Permission = "dns:view"
+	// PermissionManageDNS grants access to manage DNS configuration.
 	PermissionManageDNS Permission = "dns:manage"
 
-	// Configuration permissions.
-	PermissionViewConfig   Permission = "config:view"
+	// PermissionViewConfig grants access to view configuration.
+	PermissionViewConfig Permission = "config:view"
+	// PermissionManageConfig grants access to manage configuration.
 	PermissionManageConfig Permission = "config:manage"
 
-	// Update permissions.
-	PermissionViewUpdates   Permission = "updates:view"
+	// PermissionViewUpdates grants access to view updates.
+	PermissionViewUpdates Permission = "updates:view"
+	// PermissionManageUpdates grants access to manage updates.
 	PermissionManageUpdates Permission = "updates:manage"
 
-	// Cache permissions.
-	PermissionViewCache   Permission = "cache:view"
+	// PermissionViewCache grants access to view cache.
+	PermissionViewCache Permission = "cache:view"
+	// PermissionManageCache grants access to manage cache.
 	PermissionManageCache Permission = "cache:manage"
 
-	// History permissions.
+	// PermissionViewHistory grants access to view DNS history.
 	PermissionViewHistory Permission = "history:view"
 
-	// Statistics permissions.
+	// PermissionViewStats grants access to view statistics.
 	PermissionViewStats Permission = "stats:view"
 
-	// Overview permissions.
+	// PermissionViewOverview grants access to view overview.
 	PermissionViewOverview Permission = "overview:view"
 
-	// Info permissions.
+	// PermissionViewInfo grants access to view system info.
 	PermissionViewInfo Permission = "info:view"
 
-	// Resolve permissions.
+	// PermissionViewResolve grants access to test DNS resolution.
 	PermissionViewResolve Permission = "resolve:view"
 )
 
@@ -130,24 +142,12 @@ func GetRole(name string) *Role {
 
 // HasPermission checks if a role has a specific permission.
 func (r *Role) HasPermission(permission Permission) bool {
-	for _, p := range r.Permissions {
-		if p == permission {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(r.Permissions, permission)
 }
 
 // HasAnyPermission checks if a role has any of the specified permissions.
 func (r *Role) HasAnyPermission(permissions ...Permission) bool {
-	for _, permission := range permissions {
-		if r.HasPermission(permission) {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(permissions, r.HasPermission)
 }
 
 // HasAllPermissions checks if a role has all of the specified permissions.

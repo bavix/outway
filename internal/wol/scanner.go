@@ -376,9 +376,9 @@ func (ns *NetworkScanner) getArpTable(ctx context.Context) ([]*ScanResult, error
 func (ns *NetworkScanner) parseNmapOutput(output string) []*ScanResult {
 	var results []*ScanResult
 
-	lines := strings.Split(output, "\n")
+	lines := strings.SplitSeq(output, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -410,9 +410,9 @@ func (ns *NetworkScanner) parseNmapOutput(output string) []*ScanResult {
 func (ns *NetworkScanner) parseArpScanOutput(output string) []*ScanResult {
 	var results []*ScanResult
 
-	lines := strings.Split(output, "\n")
+	lines := strings.SplitSeq(output, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "Interface:") || strings.HasPrefix(line, "Starting") {
 			continue
@@ -449,9 +449,9 @@ func (ns *NetworkScanner) parseArpScanOutput(output string) []*ScanResult {
 func (ns *NetworkScanner) parseArpOutput(output string) []*ScanResult {
 	var results []*ScanResult
 
-	lines := strings.Split(output, "\n")
+	lines := strings.SplitSeq(output, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

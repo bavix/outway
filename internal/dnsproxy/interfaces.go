@@ -48,6 +48,10 @@ type HistoryManager interface {
 	AddEvent(event QueryEvent)
 	// GetHistory returns recent query events
 	GetHistory(limit int) []QueryEvent
+	// GetHistoryPaginated returns paginated history with offset and limit
+	GetHistoryPaginated(offset, limit int) []QueryEvent
+	// GetHistorySize returns the total number of history events
+	GetHistorySize() int
 	// ClearHistory clears all history
 	ClearHistory()
 }

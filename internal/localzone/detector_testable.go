@@ -186,9 +186,9 @@ func (zd *TestableZoneDetector) detectFromMDNS() ([]string, error) {
 func (zd *TestableZoneDetector) parseResolvConfContent(content string) []string {
 	var zones []string
 
-	lines := strings.Split(content, "\n")
+	lines := strings.SplitSeq(content, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		line = strings.TrimSpace(line)
 
 		// Look for search/domain lines
@@ -212,9 +212,9 @@ func (zd *TestableZoneDetector) parseResolvConfContent(content string) []string 
 func (zd *TestableZoneDetector) parseMDNSContent(content string) []string {
 	var zones []string
 
-	lines := strings.Split(content, "\n")
+	lines := strings.SplitSeq(content, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		line = strings.TrimSpace(line)
 
 		// Look for domain-name in avahi config

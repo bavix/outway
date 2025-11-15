@@ -220,7 +220,7 @@ func TestWakeOnLan_ConfigManagement(t *testing.T) {
 	assert.Equal(t, newConfig, updatedConfig)
 
 	// Test partial update
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port": 8,
 		"enabled":      true,
 	}
@@ -492,7 +492,7 @@ func TestWakeOnLan_ConfigClone(t *testing.T) {
 	configManager := wol.NewConfigManager()
 
 	// Update config
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port": 7,
 		"enabled":      false,
 	}
@@ -507,7 +507,7 @@ func TestWakeOnLan_ConfigClone(t *testing.T) {
 	assert.Equal(t, configManager.GetConfig(), clonedManager.GetConfig())
 
 	// Verify they are independent
-	_ = configManager.UpdateConfig(map[string]interface{}{"default_port": 8})
+	_ = configManager.UpdateConfig(map[string]any{"default_port": 8})
 	assert.NotEqual(t, configManager.GetConfig().DefaultPort, clonedManager.GetConfig().DefaultPort)
 }
 
@@ -517,7 +517,7 @@ func TestWakeOnLan_ConfigReset(t *testing.T) {
 	configManager := wol.NewConfigManager()
 
 	// Update config
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"default_port": 7,
 		"enabled":      false,
 	}

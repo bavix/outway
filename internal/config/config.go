@@ -14,6 +14,11 @@ import (
 	yaml "github.com/goccy/go-yaml"
 )
 
+const (
+	// MaxDNSNameLength is the maximum length of a DNS name (RFC 1035).
+	MaxDNSNameLength = 253
+)
+
 var (
 	errConfigPathEmpty               = errors.New("config path is empty")
 	errListenUDPTCPMustBeSet         = errors.New("listen.udp and listen.tcp must be set")
@@ -31,6 +36,22 @@ var (
 	errAddressMustBeHostPort         = errors.New("address must be host:port or :port")
 	errCacheTTLBoundsMustBeNonNeg    = errors.New("cache ttl bounds must be non-negative")
 	errCacheMinTTLGreaterThanMax     = errors.New("cache min_ttl_seconds cannot be greater than max_ttl_seconds")
+
+	// HostOverride validation errors.
+	errHostPatternEmpty             = errors.New("host pattern cannot be empty")
+	errHostPatternTooLong           = errors.New("host pattern too long (max 253 characters)")
+	errDomainLabelTooLongOrEmpty    = errors.New("invalid domain pattern: label too long or empty")
+	errDomainLabelCannotStartHyphen = errors.New("invalid domain pattern: label cannot start with hyphen")
+	errDomainLabelCannotEndHyphen   = errors.New("invalid domain pattern: label cannot end with hyphen")
+	errHostOverrideNoRecords        = errors.New("host override must have at least one A or AAAA record")
+	errARecordEmpty                 = errors.New("a record cannot be empty")
+	errARecordInvalidIPv4           = errors.New("invalid IPv4 address in a record")
+	errARecordNotIPv4               = errors.New("a record must be IPv4 address")
+	errAAAARecordEmpty              = errors.New("aaaa record cannot be empty")
+	errAAAARecordInvalidIPv6        = errors.New("invalid IPv6 address in aaaa record")
+	errAAAARecordNotIPv6            = errors.New("aaaa record must be IPv6 address")
+	errTTLTooLarge                  = errors.New("ttl too large")
+	errDomainInvalidCharacter       = errors.New("invalid domain pattern: invalid character in label")
 )
 
 const (
@@ -189,6 +210,7 @@ type HTTPConfig struct {
 	WriteTimeout   time.Duration `yaml:"write_timeout,omitempty"`
 	IdleTimeout    time.Duration `yaml:"idle_timeout,omitempty"`
 	MaxHeaderBytes int           `yaml:"max_header_bytes,omitempty"`
+	MaxRequestSize int64         `yaml:"max_request_size,omitempty"` // Max request body size in bytes (default 1MB)
 }
 
 // UpdateConfig defines automatic update settings.
@@ -201,17 +223,19 @@ type UpdateConfig struct {
 
 // Config is the main application configuration.
 type Config struct {
-	AppName    string           `yaml:"app_name,omitempty"`
-	Listen     ListenConfig     `yaml:"listen"`
-	Upstreams  []UpstreamConfig `yaml:"upstreams"`
-	RuleGroups []RuleGroup      `yaml:"rule_groups"`
-	History    HistoryConfig    `yaml:"history,omitempty"`
-	Log        LogConfig        `yaml:"log,omitempty"`
-	Cache      CacheConfig      `yaml:"cache,omitempty"`
-	HTTP       HTTPConfig       `yaml:"http,omitempty"`
-	Hosts      []HostOverride   `yaml:"hosts,omitempty"`
-	Update     UpdateConfig     `yaml:"update,omitempty"`
-	Users      []UserConfig     `yaml:"users,omitempty"`
+	AppName       string           `yaml:"app_name,omitempty"`
+	Listen        ListenConfig     `yaml:"listen"`
+	Upstreams     []UpstreamConfig `yaml:"upstreams"`
+	RuleGroups    []RuleGroup      `yaml:"rule_groups"`
+	History       HistoryConfig    `yaml:"history,omitempty"`
+	Log           LogConfig        `yaml:"log,omitempty"`
+	Cache         CacheConfig      `yaml:"cache,omitempty"`
+	HTTP          HTTPConfig       `yaml:"http,omitempty"`
+	Hosts         []HostOverride   `yaml:"hosts,omitempty"`
+	Update        UpdateConfig     `yaml:"update,omitempty"`
+	Users         []UserConfig     `yaml:"users,omitempty"`
+	JWTSecret     string           `yaml:"jwt_secret,omitempty"`     // Base64 encoded JWT secret
+	RefreshTokens []RefreshToken   `yaml:"refresh_tokens,omitempty"` // Persisted refresh tokens
 	// LocalZones removed - Local DNS is now fully auto-detected
 	Path string `yaml:"-"`
 }
@@ -234,18 +258,116 @@ type UserConfig struct {
 	Role     string `json:"role"     yaml:"role"`     // "admin" for now
 }
 
+// RefreshToken represents a persisted refresh token.
+type RefreshToken struct {
+	Token     string    `json:"token"      yaml:"token"`
+	UserEmail string    `json:"user_email" yaml:"user_email"`
+	ExpiresAt time.Time `json:"expires_at" yaml:"expires_at"`
+	CreatedAt time.Time `json:"created_at" yaml:"created_at"`
+}
+
+// Validate validates a HostOverride entry.
+//
+//nolint:gocognit,cyclop,funlen // complex validation logic with multiple checks
+func (h *HostOverride) Validate() error {
+	// Validate pattern
+	if h.Pattern == "" {
+		return errHostPatternEmpty
+	}
+
+	// Pattern should be a valid domain name or wildcard pattern
+	pattern := strings.TrimSpace(h.Pattern)
+	if len(pattern) > MaxDNSNameLength {
+		return errHostPatternTooLong
+	}
+
+	// Allow wildcard patterns like *.example.com
+	pattern = strings.TrimPrefix(pattern, "*.")
+
+	// Basic domain validation - allow letters, numbers, dots, hyphens
+	// Must start and end with alphanumeric
+	if pattern != "" {
+		parts := strings.SplitSeq(pattern, ".")
+		for part := range parts {
+			if len(part) == 0 || len(part) > 63 {
+				return errDomainLabelTooLongOrEmpty
+			}
+			// Each label should be alphanumeric with optional hyphens
+			for i, r := range part {
+				if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' {
+					return fmt.Errorf("%w: '%c'", errDomainInvalidCharacter, r)
+				}
+
+				if i == 0 && r == '-' {
+					return errDomainLabelCannotStartHyphen
+				}
+
+				if i == len(part)-1 && r == '-' {
+					return errDomainLabelCannotEndHyphen
+				}
+			}
+		}
+	}
+
+	// Validate A records (IPv4)
+	for i, ip := range h.A {
+		if ip == "" {
+			return fmt.Errorf("%w (#%d)", errARecordEmpty, i+1)
+		}
+
+		parsedIP := net.ParseIP(ip)
+		if parsedIP == nil {
+			return fmt.Errorf("%w (#%d: %s)", errARecordInvalidIPv4, i+1, ip)
+		}
+
+		if parsedIP.To4() == nil {
+			return fmt.Errorf("%w (#%d: %s)", errARecordNotIPv4, i+1, ip)
+		}
+	}
+
+	// Validate AAAA records (IPv6)
+	for i, ip := range h.AAAA {
+		if ip == "" {
+			return fmt.Errorf("%w (#%d)", errAAAARecordEmpty, i+1)
+		}
+
+		parsedIP := net.ParseIP(ip)
+		if parsedIP == nil {
+			return fmt.Errorf("%w (#%d: %s)", errAAAARecordInvalidIPv6, i+1, ip)
+		}
+
+		if parsedIP.To4() != nil {
+			return fmt.Errorf("%w (#%d: %s)", errAAAARecordNotIPv6, i+1, ip)
+		}
+	}
+
+	// Validate TTL (optional, but if set should be reasonable)
+	// DNS TTL is typically 0-2147483647 seconds (about 68 years)
+	const maxTTL = 2147483647
+	if h.TTL > maxTTL {
+		return fmt.Errorf("%w (max %d seconds): %d", errTTLTooLarge, maxTTL, h.TTL)
+	}
+
+	// At least one record type should be present
+	if len(h.A) == 0 && len(h.AAAA) == 0 {
+		return errHostOverrideNoRecords
+	}
+
+	return nil
+}
+
 // SafeConfig represents a configuration without sensitive data for API responses.
 type SafeConfig struct {
 	AppName    string           `json:"app_name,omitempty"`
 	Listen     ListenConfig     `json:"listen"`
 	Upstreams  []UpstreamConfig `json:"upstreams"`
 	RuleGroups []RuleGroup      `json:"rule_groups"`
-	History    HistoryConfig    `json:"history,omitempty"`
-	Log        LogConfig        `json:"log,omitempty"`
-	Cache      CacheConfig      `json:"cache,omitempty"`
-	HTTP       HTTPConfig       `json:"http,omitempty"`
+	History    HistoryConfig    `json:"history,omitzero"`
+	Log        LogConfig        `json:"log,omitzero"`
+	Cache      CacheConfig      `json:"cache,omitzero"`
+	HTTP       HTTPConfig       `json:"http,omitzero"`
 	Hosts      []HostOverride   `json:"hosts,omitempty"`
-	Update     UpdateConfig     `json:"update,omitempty"`
+	Update     UpdateConfig     `json:"update,omitzero"`
 	Users      []UserConfig     `json:"users,omitempty"`
 }
 
@@ -312,7 +434,13 @@ func (c *Config) GetUpstreamAddresses() []string {
 	addresses := make([]string, 0, len(upstreams))
 
 	for _, upstream := range upstreams {
-		addresses = append(addresses, upstream.Type+":"+upstream.Address)
+		// If address already contains scheme (://), use it as-is
+		// Otherwise, prepend type: prefix for legacy format
+		if strings.Contains(upstream.Address, "://") {
+			addresses = append(addresses, upstream.Address)
+		} else {
+			addresses = append(addresses, upstream.Type+":"+upstream.Address)
+		}
 	}
 
 	return addresses
@@ -396,7 +524,7 @@ func Load(path string) (*Config, error) { //nolint:cyclop,funlen
 
 	// Set default history settings
 	if cfg.History.MaxEntries <= 0 {
-		cfg.History.MaxEntries = 1000
+		cfg.History.MaxEntries = 500 // Reduced from 1000 to prevent OOM
 	}
 
 	if !cfg.History.Enabled {
@@ -480,15 +608,19 @@ func (c *Config) Save() error {
 	defer saveMu.Unlock()
 
 	if c.Path == "" {
-		return errConfigPathEmpty
+		return fmt.Errorf("%w: config path is empty", errConfigPathEmpty)
 	}
 
 	out, err := yaml.Marshal(c)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal config to YAML: %w", err)
 	}
 
-	return os.WriteFile(c.Path, out, defaultFilePerm)
+	if err := os.WriteFile(c.Path, out, defaultFilePerm); err != nil {
+		return fmt.Errorf("failed to write config file %s: %w", c.Path, err)
+	}
+
+	return nil
 }
 
 func (c *Config) Validate() error { //nolint:gocognit,cyclop,funlen

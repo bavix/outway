@@ -13,8 +13,10 @@ import (
 )
 
 type pfBackend struct {
-	mu     sync.Mutex
-	timers map[string]*time.Timer // ip -> timer
+	mu         sync.Mutex
+	timers     map[string]*time.Timer // ip -> timer
+	routeCache map[string]time.Time   // Cache of existing routes: "ip:iface" -> expiry time
+	cacheMu    sync.RWMutex
 }
 
 func NewPFBackend() *pfBackend {
@@ -26,11 +28,15 @@ func NewPFBackend() *pfBackend {
 		return nil
 	}
 
-	return &pfBackend{timers: make(map[string]*time.Timer)}
+	return &pfBackend{
+		timers:     make(map[string]*time.Timer),
+		routeCache: make(map[string]time.Time),
+	}
 }
 
 func (p *pfBackend) Name() string { return "pf" }
 
+//nolint:cyclop,nestif,funlen // complex route management logic with nested cache checks
 func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int) error {
 	ttlSeconds = max(ttlSeconds, minTTLSeconds)
 
@@ -44,18 +50,47 @@ func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int
 		return fmt.Errorf("failed to add IP %s to pfctl table %s: %w", ip, table, err)
 	}
 
-	args := []string{"-n", "add"}
-	if strings.Contains(ip, ":") {
-		args = append(args, "-inet6")
-	}
+	// Check cache first to avoid unnecessary route add attempts
+	cacheKey := ip + ":" + iface
 
-	args = append(args, "-host", ip, "-interface", iface)
+	p.cacheMu.RLock()
 
-	addRoute := exec.CommandContext(ctx, "route", args...)
-	if out, err := addRoute.CombinedOutput(); err != nil {
-		zerolog.Ctx(ctx).Err(err).Bytes("out", out).Str("args", strings.Join(args, " ")).Msg("route add failed")
+	if expiry, exists := p.routeCache[cacheKey]; exists && time.Now().Before(expiry) {
+		p.cacheMu.RUnlock()
+		zerolog.Ctx(ctx).Debug().Str("ip", ip).Str("iface", iface).Msg("route exists in cache, skipping")
+		// Route exists in cache, continue with timer setup
+	} else {
+		p.cacheMu.RUnlock()
 
-		return fmt.Errorf("failed to add route for IP %s via interface %s: %w", ip, iface, err)
+		args := []string{"-n", "add"}
+		if strings.Contains(ip, ":") {
+			args = append(args, "-inet6")
+		}
+
+		args = append(args, "-host", ip, "-interface", iface)
+
+		addRoute := exec.CommandContext(ctx, "route", args...)
+		if out, err := addRoute.CombinedOutput(); err != nil {
+			output := string(out)
+			// Check if route already exists - this is not an error
+			if strings.Contains(output, "File exists") || strings.Contains(output, "already exists") {
+				zerolog.Ctx(ctx).Debug().Str("ip", ip).Str("iface", iface).Msg("route already exists, skipping")
+				// Route already exists, add to cache
+				p.cacheMu.Lock()
+				p.routeCache[cacheKey] = time.Now().Add(time.Duration(ttlSeconds) * time.Second)
+				p.cacheMu.Unlock()
+				// Continue with timer setup
+			} else {
+				zerolog.Ctx(ctx).Err(err).Bytes("out", out).Str("args", strings.Join(args, " ")).Msg("route add failed")
+
+				return fmt.Errorf("failed to add route for IP %s via interface %s: %w", ip, iface, err)
+			}
+		} else {
+			// Route added successfully, add to cache
+			p.cacheMu.Lock()
+			p.routeCache[cacheKey] = time.Now().Add(time.Duration(ttlSeconds) * time.Second)
+			p.cacheMu.Unlock()
+		}
 	}
 	// schedule/delete via cancellable timer (no blocking sleeps)
 	d := time.Duration(ttlSeconds) * time.Second
@@ -79,6 +114,11 @@ func (p *pfBackend) MarkIP(ctx context.Context, iface, ip string, ttlSeconds int
 
 		delArgs = append(delArgs, "-host", ip, "-interface", iface)
 		_ = exec.CommandContext(ctx, "route", delArgs...).Run()
+
+		// Remove from cache
+		p.cacheMu.Lock()
+		delete(p.routeCache, cacheKey)
+		p.cacheMu.Unlock()
 
 		p.mu.Lock()
 		delete(p.timers, ip)

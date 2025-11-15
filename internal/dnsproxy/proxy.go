@@ -201,9 +201,10 @@ func New(cfg *config.Config, backend firewall.Backend) *Proxy {
 
 	// Initialize cache if enabled
 	if cfg.Cache.Enabled {
-		cache := NewCachedResolver(
+		cache := NewCachedResolverWithSize(
 			nil, // Will be set in rebuildResolver
 			cfg.Cache.MaxEntries,
+			cfg.Cache.MaxSizeMB,
 			cfg.Cache.MinTTLSeconds,
 			cfg.Cache.MaxTTLSeconds,
 		)
@@ -282,7 +283,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 	return nil
 }
 
-func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcorder,funlen
+func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcorder,funlen,cyclop
 	return func(w dns.ResponseWriter, r *dns.Msg) {
 		// Panic recovery for DNS handler
 		defer func() {
@@ -328,6 +329,16 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 					duration = time.Microsecond
 				}
 
+				logger := zerolog.Ctx(ctx).With().
+					Str("query", strings.TrimSuffix(q.Name, ".")).
+					Uint16("qtype", q.Qtype).
+					Str("upstream", usedUpstream).
+					Dur("duration", duration).
+					Str("client_ip", clientIP).
+					Logger()
+
+				logger.Error().Err(err).Msg("DNS resolution failed")
+
 				p.history.AddEvent(QueryEvent{
 					Name:     strings.TrimSuffix(q.Name, "."),
 					QType:    q.Qtype,
@@ -337,6 +348,8 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 					Time:     time.Now(),
 					ClientIP: clientIP,
 				})
+			} else {
+				zerolog.Ctx(ctx).Error().Err(err).Str("upstream", usedUpstream).Msg("DNS resolution failed (no question)")
 			}
 
 			dns.HandleFailed(w, r)
@@ -354,8 +367,25 @@ func (p *Proxy) handleDNS(ctx context.Context) dns.HandlerFunc { //nolint:funcor
 				duration = time.Microsecond
 			}
 
+			queryName := strings.TrimSpace(strings.TrimSuffix(q.Name, "."))
+
+			answersCount := 0
+			if resp != nil {
+				answersCount = len(resp.Answer)
+			}
+
+			// Log successful resolution at debug level to avoid spam
+			zerolog.Ctx(ctx).Debug().
+				Str("query", queryName).
+				Uint16("qtype", q.Qtype).
+				Str("upstream", usedUpstream).
+				Dur("duration", duration).
+				Int("answers", answersCount).
+				Str("client_ip", clientIP).
+				Msg("DNS resolution successful")
+
 			p.history.AddEvent(QueryEvent{
-				Name:     strings.TrimSpace(strings.TrimSuffix(q.Name, ".")),
+				Name:     queryName,
 				QType:    q.Qtype,
 				Upstream: usedUpstream,
 				Duration: duration.String(),
@@ -485,6 +515,15 @@ func parseUpstream(u string) (string, string) { //nolint:cyclop
 		return protocolUDP, defaultDNS // fallback
 	}
 
+	// UDP/TCP scheme support (udp://host:port, tcp://host:port)
+	if after, ok := strings.CutPrefix(u, "udp://"); ok {
+		return protocolUDP, after
+	}
+
+	if after, ok := strings.CutPrefix(u, "tcp://"); ok {
+		return protocolTCP, after
+	}
+
 	// DoH URL passthrough
 	if strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://") {
 		return protocolDOH, u
@@ -586,7 +625,12 @@ func (p *Proxy) PersistRules() error {
 		cfg.RuleGroups[0].Patterns = patterns
 	}
 
-	return p.config.SaveConfig()
+	if err := p.config.SaveConfig(); err != nil {
+		// Note: ctx might not be available here, but we can still log
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	return nil
 }
 
 // GetUpstreams returns upstreams helpers.
@@ -620,12 +664,20 @@ func (p *Proxy) SetUpstreamsConfig(ctx context.Context, ups []config.UpstreamCon
 	p.rebuildResolver(ctx)
 
 	// 3) Persist a clean config without explicit types (omitted in YAML)
+	// Normalize addresses: remove udp:// and tcp:// prefixes, keep only host:port
 	persist := make([]config.UpstreamConfig, 0, len(ups))
 	for _, u := range ups {
-		// keep name/address/weight; drop Type to rely on autodetect at load
+		normalizedAddr := u.Address
+		// Remove scheme prefixes for UDP/TCP to normalize storage format
+		if after, ok := strings.CutPrefix(normalizedAddr, "udp://"); ok {
+			normalizedAddr = after
+		} else if after, ok := strings.CutPrefix(normalizedAddr, "tcp://"); ok {
+			normalizedAddr = after
+		}
+		// Keep name/address/weight; drop Type to rely on autodetect at load
 		persist = append(persist, config.UpstreamConfig{
 			Name:    u.Name,
-			Address: u.Address,
+			Address: normalizedAddr,
 			Weight:  u.Weight,
 			// Type intentionally left empty (omitempty)
 		})
@@ -634,7 +686,13 @@ func (p *Proxy) SetUpstreamsConfig(ctx context.Context, ups []config.UpstreamCon
 	cfg := p.config.GetConfig()
 	cfg.Upstreams = persist
 
-	return p.config.SaveConfig()
+	if err := p.config.SaveConfig(); err != nil {
+		zerolog.Ctx(ctx).Err(err).Msg("failed to save config after updating upstreams")
+
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	return nil
 }
 
 // local shim to avoid import cycle; mirrors internal/config.detectType.
@@ -672,16 +730,41 @@ func (p *Proxy) GetHosts() []config.HostOverride {
 }
 
 func (p *Proxy) SetHosts(ctx context.Context, hosts []config.HostOverride) error {
-	// Update hosts in place without rebuilding resolver pipeline
+	logger := zerolog.Ctx(ctx).With().Int("hosts_count", len(hosts)).Logger()
+
+	logger.Info().Msg("updating hosts configuration")
+
+	// Update hosts in place (thread-safe)
 	if err := p.hosts.UpdateHostsInPlace(hosts); err != nil {
+		logger.Error().Err(err).Msg("failed to update hosts in place")
+
 		return err
 	}
 
+	logger.Debug().Msg("hosts updated successfully in manager")
+
+	// Note: rebuildResolver() is no longer needed because HostsResolver is now dynamic
+	// and reads hosts from manager on each request. This improves performance by avoiding
+	// full pipeline rebuild on every hosts update.
+	// If you need to rebuild for other reasons, you can still call rebuildResolver(ctx)
+
 	// Save configuration
-	return p.config.SaveConfig()
+	if err := p.config.SaveConfig(); err != nil {
+		logger.Error().Err(err).Msg("failed to save config after updating hosts")
+
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	logger.Info().Msg("hosts configuration updated and saved successfully")
+
+	return nil
 }
 
-func (p *Proxy) SetUpstreams(ctx context.Context, us []string) error { //nolint:cyclop
+func (p *Proxy) SetUpstreams(ctx context.Context, us []string) error { //nolint:cyclop,funlen
+	logger := zerolog.Ctx(ctx).With().Int("upstreams_count", len(us)).Logger()
+
+	logger.Info().Msg("updating upstreams configuration")
+
 	// Convert string upstreams to UpstreamConfig
 	upstreams := make([]config.UpstreamConfig, 0, len(us))
 	seen := map[string]struct{}{}
@@ -730,17 +813,29 @@ func (p *Proxy) SetUpstreams(ctx context.Context, us []string) error { //nolint:
 
 	// Update upstreams manager
 	if err := p.upstreams.SetUpstreams(upstreams); err != nil {
+		logger.Error().Err(err).Msg("failed to update upstreams in manager")
+
 		return err
 	}
 
+	logger.Debug().Int("valid_upstreams", len(upstreams)).Msg("upstreams updated successfully in manager")
+
 	// Rebuild active resolver chain
 	p.rebuildResolver(ctx)
+
+	logger.Info().Msg("upstreams configuration updated and pipeline rebuilt successfully")
 
 	// Update config
 	cfg := p.config.GetConfig()
 	cfg.Upstreams = upstreams
 
-	return p.config.SaveConfig()
+	if err := p.config.SaveConfig(); err != nil {
+		zerolog.Ctx(ctx).Err(err).Msg("failed to save config after updating upstreams")
+
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	return nil
 }
 
 // QueryEvent represents one DNS query record for in-memory history.
@@ -757,6 +852,16 @@ type QueryEvent struct {
 // History returns a copy of last events (newest first).
 func (p *Proxy) History() []QueryEvent {
 	return p.history.GetHistory(0) // 0 means return all
+}
+
+// HistoryPaginated returns paginated history with offset and limit.
+func (p *Proxy) HistoryPaginated(offset, limit int) []QueryEvent {
+	return p.history.GetHistoryPaginated(offset, limit)
+}
+
+// HistorySize returns the total number of history events.
+func (p *Proxy) HistorySize() int {
+	return p.history.GetHistorySize()
 }
 
 // extractClientIPFromEDNS0 extracts client IP from EDNS0 Client Subnet option.

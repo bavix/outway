@@ -89,7 +89,7 @@ func (h *APIHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	render.JSON(w, r, map[string]interface{}{
+	render.JSON(w, r, map[string]any{
 		"users": users,
 		"count": len(users),
 	})
@@ -336,7 +336,7 @@ func (h *APIHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 // GetRoles returns all available roles with their descriptions.
 func (h *APIHandler) GetRoles(w http.ResponseWriter, r *http.Request) {
-	roles := []map[string]interface{}{
+	roles := []map[string]any{
 		{
 			"name":              "admin",
 			"description":       "Full system access with all permissions",
@@ -349,7 +349,7 @@ func (h *APIHandler) GetRoles(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	render.JSON(w, r, map[string]interface{}{
+	render.JSON(w, r, map[string]any{
 		"roles": roles,
 		"count": len(roles),
 	})
@@ -368,7 +368,7 @@ func (h *APIHandler) GetRolePermissions(w http.ResponseWriter, r *http.Request) 
 		categories[perm.Category] = append(categories[perm.Category], perm)
 	}
 
-	render.JSON(w, r, map[string]interface{}{
+	render.JSON(w, r, map[string]any{
 		"role":        role,
 		"permissions": permissions,
 		"categories":  categories,

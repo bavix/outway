@@ -6,12 +6,11 @@ import (
 	"github.com/bavix/outway/internal/wol"
 )
 
-// WOLResolverInterface defines the interface for WOL resolver operations.
 // WOLConfigInterface handles WOL configuration operations.
 type WOLConfigInterface interface {
 	GetWOLConfig() *wol.Config
 	SetWOLConfig(config *wol.Config) error
-	UpdateWOLConfig(updates map[string]interface{}) error
+	UpdateWOLConfig(updates map[string]any) error
 }
 
 // WOLDeviceInterface handles WOL device operations.
@@ -48,5 +47,5 @@ type WOLResolverInterface interface {
 	WOLDeviceInterface
 	WOLNetworkInterface
 	WOLWakeInterface
-	GetWOLStatus(ctx context.Context) map[string]interface{}
+	GetWOLStatus(ctx context.Context) map[string]any
 }

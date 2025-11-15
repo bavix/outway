@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/rs/zerolog"
+
 	"github.com/bavix/outway/internal/config"
 )
 
@@ -119,13 +121,11 @@ func (hm *hostsManager) SetHosts(hosts []config.HostOverride) error {
 }
 
 func (hm *hostsManager) CreateHostsResolver(next Resolver, cfg *config.Config) *HostsResolver {
-	hm.mu.RLock()
-	defer hm.mu.RUnlock()
-
+	// Create dynamic resolver that reads from manager
 	return &HostsResolver{
-		Next:  next,
-		Hosts: hm.hosts,
-		Cfg:   cfg,
+		Next:         next,
+		HostsManager: hm, // Use manager for dynamic hosts reading
+		Cfg:          cfg,
 	}
 }
 
@@ -218,20 +218,50 @@ func (hm *historyManager) AddEvent(event QueryEvent) {
 }
 
 func (hm *historyManager) GetHistory(limit int) []QueryEvent {
+	return hm.GetHistoryPaginated(0, limit)
+}
+
+func (hm *historyManager) GetHistoryPaginated(offset, limit int) []QueryEvent {
 	hm.mu.RLock()
 	defer hm.mu.RUnlock()
 
-	if limit <= 0 || limit > hm.size {
+	if limit <= 0 {
 		limit = hm.size
+	}
+	// Limit maximum to prevent huge responses
+	const maxLimit = 1000
+	if limit > maxLimit {
+		limit = maxLimit
+	}
+
+	if offset < 0 {
+		offset = 0
+	}
+
+	available := hm.size - offset
+	if available <= 0 {
+		return []QueryEvent{}
+	}
+
+	if limit > available {
+		limit = available
 	}
 
 	result := make([]QueryEvent, limit)
 	for i := range limit {
-		idx := (hm.head - limit + i + hm.capacity) % hm.capacity
+		// Calculate index: start from head, go backwards by (offset + limit - i - 1)
+		idx := (hm.head - offset - limit + i + hm.capacity) % hm.capacity
 		result[i] = hm.events[idx]
 	}
 
 	return result
+}
+
+func (hm *historyManager) GetHistorySize() int {
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+
+	return hm.size
 }
 
 func (hm *historyManager) ClearHistory() {
@@ -304,7 +334,24 @@ func (cm *configManager) SaveConfig() error {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	return cm.cfg.Save()
+	zerolog.Ctx(context.Background()).Debug().
+		Str("config_path", cm.cfg.Path).
+		Msg("saving configuration to disk")
+
+	if err := cm.cfg.Save(); err != nil {
+		zerolog.Ctx(context.Background()).Error().
+			Err(err).
+			Str("config_path", cm.cfg.Path).
+			Msg("failed to save configuration")
+
+		return err
+	}
+
+	zerolog.Ctx(context.Background()).Debug().
+		Str("config_path", cm.cfg.Path).
+		Msg("configuration saved successfully")
+
+	return nil
 }
 
 func (cm *configManager) UpdateConfig(updater func(*config.Config)) error {

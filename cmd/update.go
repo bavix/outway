@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog"
@@ -230,6 +231,10 @@ func FormatFileSize(bytes int64) string {
 
 	// Bytes case: no decimals
 	if bytes < kbInt {
+		if len(units) == 0 {
+			return strconv.FormatInt(bytes, 10)
+		}
+
 		return fmt.Sprintf("%d %s", bytes, units[0])
 	}
 
@@ -239,6 +244,10 @@ func FormatFileSize(bytes int64) string {
 	for size >= k && unitIndex < len(units)-1 {
 		size /= k
 		unitIndex++
+	}
+
+	if unitIndex >= len(units) {
+		return fmt.Sprintf("%.2f", size)
 	}
 
 	return fmt.Sprintf("%.2f %s", size, units[unitIndex])

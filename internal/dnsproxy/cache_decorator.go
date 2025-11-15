@@ -5,16 +5,28 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/miekg/dns"
+	"github.com/rs/zerolog"
 	"golang.org/x/sync/singleflight"
+)
+
+const (
+	bytesPerKB = 1024
+	bytesPerMB = bytesPerKB * bytesPerKB
+	// Approximate sizes for DNS message components.
+	dnsHeaderSize       = 12
+	dnsQuestionOverhead = 4  // qtype + qclass
+	avgDNSRecordSize    = 35 // Average size of a DNS record
 )
 
 type cacheItem struct {
 	msg    *dns.Msg
 	expire time.Time
+	size   int64 // Approximate size in bytes
 }
 
 // cacheChangeNotify is an optional hook set by dashboardhttp to broadcast cache changes.
@@ -28,25 +40,42 @@ func SetCacheChangeNotifier(fn func()) { cacheChangeNotify = fn }
 type CachedResolver struct {
 	Next          Resolver
 	MaxEntries    int
+	MaxSizeBytes  int64 // Maximum cache size in bytes (0 = disabled)
 	MinTTLSeconds int
 	MaxTTLSeconds int
 
-	lru *lru.LRU[string, cacheItem]
-	sf  singleflight.Group
+	lru         *lru.LRU[string, cacheItem]
+	sf          singleflight.Group
+	currentSize int64 // Current cache size in bytes
+	sizeMu      sync.RWMutex
 }
 
 func NewCachedResolver(next Resolver, maxEntries int, minTTLSeconds int, maxTTLSeconds int) *CachedResolver {
+	return NewCachedResolverWithSize(next, maxEntries, 0, minTTLSeconds, maxTTLSeconds)
+}
+
+// NewCachedResolverWithSize creates a new cached resolver with size limit.
+// This is exported for testing purposes.
+func NewCachedResolverWithSize(next Resolver, maxEntries int, maxSizeMB int, minTTLSeconds int, maxTTLSeconds int) *CachedResolver {
 	l := lru.NewLRU[string, cacheItem](maxEntries, nil, 0)
+
+	var maxSizeBytes int64
+	if maxSizeMB > 0 {
+		maxSizeBytes = int64(maxSizeMB) * bytesPerMB // Convert MB to bytes
+	}
 
 	return &CachedResolver{
 		Next:          next,
 		MaxEntries:    maxEntries,
+		MaxSizeBytes:  maxSizeBytes,
 		MinTTLSeconds: minTTLSeconds,
 		MaxTTLSeconds: maxTTLSeconds,
 		lru:           l,
+		currentSize:   0,
 	}
 }
 
+//nolint:cyclop,funlen // complex branching for cache hit/miss/expiry logic
 func (c *CachedResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) {
 	if q == nil || len(q.Question) == 0 {
 		return c.Next.Resolve(ctx, q)
@@ -57,6 +86,12 @@ func (c *CachedResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, str
 	it, ok := c.lru.Get(key)
 	if !ok {
 		// Coalesce concurrent cache misses for the same key
+		zerolog.Ctx(ctx).Debug().
+			Str("cache_key", key).
+			Str("query", strings.TrimSuffix(q.Question[0].Name, ".")).
+			Uint16("qtype", q.Question[0].Qtype).
+			Msg("cache miss")
+
 		v, err, _ := c.sf.Do(key, func() (any, error) {
 			out, src, err := c.resolveAndCache(ctx, q, key)
 			if err != nil || out == nil {
@@ -84,6 +119,13 @@ func (c *CachedResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, str
 	}
 
 	if time.Now().After(it.expire) {
+		// Update size tracking when removing expired entry
+		if c.MaxSizeBytes > 0 {
+			c.sizeMu.Lock()
+			c.currentSize -= it.size
+			c.sizeMu.Unlock()
+		}
+
 		c.lru.Remove(key)
 
 		return c.resolveAndCache(ctx, q, key)
@@ -106,14 +148,14 @@ func (c *CachedResolver) resolveAndCache(ctx context.Context, q *dns.Msg, key st
 	out, src, err := c.Next.Resolve(ctx, q)
 	// Skip caching when there are no answers (empty result pool)
 	if err == nil && out != nil && len(out.Answer) > 0 {
-		c.put(key, out)
+		c.put(ctx, key, out)
 	}
 
 	return out, src, err
 }
 
-//nolint:funcorder // helper grouped with resolveAndCache
-func (c *CachedResolver) put(key string, msg *dns.Msg) {
+//nolint:funcorder,cyclop,nestif,funlen // helper grouped with resolveAndCache, complex eviction logic
+func (c *CachedResolver) put(ctx context.Context, key string, msg *dns.Msg) {
 	if msg == nil {
 		return
 	}
@@ -125,12 +167,117 @@ func (c *CachedResolver) put(key string, msg *dns.Msg) {
 
 	t := max(c.MinTTLSeconds, min(int(ttl), c.MaxTTLSeconds))
 	ttl = uint32(t) //nolint:gosec // TTL bounds validated in config
-	it := cacheItem{msg: msg.Copy(), expire: time.Now().Add(time.Duration(ttl) * time.Second)}
+
+	// Calculate approximate size of the message
+	itemSize := estimateMsgSize(msg)
+
+	// Check if we need to evict entries due to size limit
+	if c.MaxSizeBytes > 0 {
+		c.sizeMu.Lock()
+		// Remove old entry if exists (updating existing key)
+		if oldItem, exists := c.lru.Peek(key); exists {
+			c.currentSize -= oldItem.size
+		}
+
+		// Evict entries until we have enough space
+		// Remove least recently used entries first
+		evictedCount := 0
+
+		for c.currentSize+itemSize > c.MaxSizeBytes && c.lru.Len() > 0 {
+			// Get all keys and remove the first one (LRU order)
+			keys := c.lru.Keys()
+			if len(keys) == 0 {
+				break
+			}
+
+			// Remove the least recently used entry
+			oldKey := keys[0]
+			if oldItem, exists := c.lru.Peek(oldKey); exists {
+				c.lru.Remove(oldKey)
+				c.currentSize -= oldItem.size
+				evictedCount++
+			} else {
+				// Key was already removed, try next
+				if len(keys) > 1 {
+					oldKey = keys[1]
+					if oldItem, exists := c.lru.Peek(oldKey); exists {
+						c.lru.Remove(oldKey)
+						c.currentSize -= oldItem.size
+						evictedCount++
+					}
+				}
+
+				break
+			}
+		}
+
+		if evictedCount > 0 {
+			// Log eviction at info level as it's important for debugging memory issues
+			zerolog.Ctx(ctx).Info().
+				Int("evicted_count", evictedCount).
+				Int64("current_size_mb", c.currentSize/bytesPerMB).
+				Int64("max_size_mb", c.MaxSizeBytes/bytesPerMB).
+				Int("cache_entries", c.lru.Len()).
+				Msg("cache entries evicted due to size limit")
+		}
+
+		c.currentSize += itemSize
+		c.sizeMu.Unlock()
+	}
+
+	it := cacheItem{
+		msg:    msg.Copy(),
+		expire: time.Now().Add(time.Duration(ttl) * time.Second),
+		size:   itemSize,
+	}
 	c.lru.Add(key, it)
 
 	if cacheChangeNotify != nil {
 		cacheChangeNotify()
 	}
+}
+
+// estimateMsgSize estimates the size of a DNS message in bytes.
+// Uses message serialization for accurate size calculation.
+func estimateMsgSize(msg *dns.Msg) int64 {
+	if msg == nil {
+		return 0
+	}
+
+	// Serialize message to get accurate size
+	packed, err := msg.Pack()
+	if err != nil {
+		// Fallback to approximation if packing fails
+		return estimateMsgSizeApprox(msg)
+	}
+
+	return int64(len(packed))
+}
+
+// estimateMsgSizeApprox provides a fallback approximation if serialization fails.
+func estimateMsgSizeApprox(msg *dns.Msg) int64 {
+	if msg == nil {
+		return 0
+	}
+
+	// Base message overhead (header ~12 bytes)
+	size := int64(dnsHeaderSize)
+
+	// Question section
+	for _, q := range msg.Question {
+		size += int64(len(q.Name)) + dnsQuestionOverhead // name + qtype + qclass
+	}
+
+	// Answer section - approximate 20-50 bytes per record
+	size += int64(len(msg.Answer)) * avgDNSRecordSize
+
+	// Authority section
+	size += int64(len(msg.Ns)) * avgDNSRecordSize
+
+	// Additional section
+	size += int64(len(msg.Extra)) * avgDNSRecordSize
+
+	return size
 }
 
 func ttlFromMsg(msg *dns.Msg) uint32 {
@@ -159,6 +306,12 @@ func (c *CachedResolver) Flush() {
 
 	c.lru.Purge()
 
+	if c.MaxSizeBytes > 0 {
+		c.sizeMu.Lock()
+		c.currentSize = 0
+		c.sizeMu.Unlock()
+	}
+
 	if cacheChangeNotify != nil {
 		cacheChangeNotify()
 	}
@@ -166,6 +319,8 @@ func (c *CachedResolver) Flush() {
 
 // Delete removes cache entries for a specific name and qtype.
 // If qtype is 0, deletes common types for the name.
+//
+//nolint:cyclop // complex branching for different qtypes
 func (c *CachedResolver) Delete(name string, qtype uint16) {
 	if c == nil || c.lru == nil {
 		return
@@ -178,6 +333,14 @@ func (c *CachedResolver) Delete(name string, qtype uint16) {
 
 	if qtype != 0 {
 		key := name + ":" + strconv.FormatUint(uint64(qtype), 10)
+		if c.MaxSizeBytes > 0 {
+			if item, exists := c.lru.Peek(key); exists {
+				c.sizeMu.Lock()
+				c.currentSize -= item.size
+				c.sizeMu.Unlock()
+			}
+		}
+
 		c.lru.Remove(key)
 
 		if cacheChangeNotify != nil {
@@ -193,6 +356,14 @@ func (c *CachedResolver) Delete(name string, qtype uint16) {
 	}
 	for _, t := range common {
 		key := name + ":" + strconv.FormatUint(uint64(t), 10)
+		if c.MaxSizeBytes > 0 {
+			if item, exists := c.lru.Peek(key); exists {
+				c.sizeMu.Lock()
+				c.currentSize -= item.size
+				c.sizeMu.Unlock()
+			}
+		}
+
 		c.lru.Remove(key)
 
 		if cacheChangeNotify != nil {
@@ -309,10 +480,7 @@ func (c *CachedResolver) List(offset, limit int, q string, sortBy, order string)
 		return []cacheEntry{}, total
 	}
 
-	end := offset + limit
-	if end > len(tmp) {
-		end = len(tmp)
-	}
+	end := min(offset+limit, len(tmp))
 
 	items = tmp[offset:end]
 
@@ -338,5 +506,17 @@ func (c *CachedResolver) DeleteKey(key string) {
 		return
 	}
 
+	if c.MaxSizeBytes > 0 {
+		if item, exists := c.lru.Peek(key); exists {
+			c.sizeMu.Lock()
+			c.currentSize -= item.size
+			c.sizeMu.Unlock()
+		}
+	}
+
 	c.lru.Remove(key)
+
+	if cacheChangeNotify != nil {
+		cacheChangeNotify()
+	}
 }

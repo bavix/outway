@@ -91,7 +91,7 @@ func (cm *ConfigManager) SetConfig(config *Config) error {
 }
 
 // UpdateConfig updates specific configuration fields.
-func (cm *ConfigManager) UpdateConfig(updates map[string]interface{}) error {
+func (cm *ConfigManager) UpdateConfig(updates map[string]any) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -193,7 +193,7 @@ func (cm *ConfigManager) Clone() *ConfigManager {
 	}
 }
 
-func (cm *ConfigManager) updateConfigField(config *Config, key string, value interface{}) error {
+func (cm *ConfigManager) updateConfigField(config *Config, key string, value any) error {
 	switch key {
 	case "default_port":
 		return cm.updateDefaultPort(config, value)
@@ -210,7 +210,7 @@ func (cm *ConfigManager) updateConfigField(config *Config, key string, value int
 	}
 }
 
-func (cm *ConfigManager) updateDefaultPort(config *Config, value interface{}) error {
+func (cm *ConfigManager) updateDefaultPort(config *Config, value any) error {
 	if port, ok := value.(int); ok {
 		config.DefaultPort = port
 	} else if port, ok := value.(float64); ok {
@@ -222,7 +222,7 @@ func (cm *ConfigManager) updateDefaultPort(config *Config, value interface{}) er
 	return nil
 }
 
-func (cm *ConfigManager) updateDefaultTimeout(config *Config, value interface{}) error {
+func (cm *ConfigManager) updateDefaultTimeout(config *Config, value any) error {
 	if timeout, ok := value.(time.Duration); ok {
 		config.DefaultTimeout = timeout
 	} else if timeout, ok := value.(float64); ok {
@@ -236,7 +236,7 @@ func (cm *ConfigManager) updateDefaultTimeout(config *Config, value interface{})
 	return nil
 }
 
-func (cm *ConfigManager) updateMaxRetries(config *Config, value interface{}) error {
+func (cm *ConfigManager) updateMaxRetries(config *Config, value any) error {
 	if retries, ok := value.(int); ok {
 		config.MaxRetries = retries
 	} else if retries, ok := value.(float64); ok {
@@ -248,7 +248,7 @@ func (cm *ConfigManager) updateMaxRetries(config *Config, value interface{}) err
 	return nil
 }
 
-func (cm *ConfigManager) updateRetryDelay(config *Config, value interface{}) error {
+func (cm *ConfigManager) updateRetryDelay(config *Config, value any) error {
 	if delay, ok := value.(time.Duration); ok {
 		config.RetryDelay = delay
 	} else if delay, ok := value.(float64); ok {
@@ -262,7 +262,7 @@ func (cm *ConfigManager) updateRetryDelay(config *Config, value interface{}) err
 	return nil
 }
 
-func (cm *ConfigManager) updateEnabled(config *Config, value interface{}) error {
+func (cm *ConfigManager) updateEnabled(config *Config, value any) error {
 	if enabled, ok := value.(bool); ok {
 		config.Enabled = enabled
 	} else {

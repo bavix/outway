@@ -1,6 +1,7 @@
 package dashboardhttp
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -63,6 +64,9 @@ const (
 	defaultBadGatewayStatus          = 502
 	defaultBadRequestStatus          = 400
 	defaultInternalServerErrorStatus = 500
+	defaultMaxRequestSize            = 1024 * 1024 // 1MB
+	maxHostsPerRequest               = 1000
+	maxUpstreamsPerRequest           = 100
 )
 
 type Server struct {
@@ -204,6 +208,7 @@ func (s *Server) SetVersion(ver, build string) {
 	}
 }
 
+//nolint:cyclop,funlen // complex initialization logic
 func (s *Server) Start(ctx context.Context) error {
 	// Fast-fail if port is occupied
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.addr)
@@ -212,6 +217,34 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	_ = ln.Close()
+
+	// Load initial DHCP leases for device manager
+	if s.deviceManager != nil {
+		if err := s.deviceManager.RefreshDHCPLeases(ctx); err != nil {
+			zerolog.Ctx(ctx).Warn().Err(err).Msg("Failed to load initial DHCP leases")
+		} else {
+			zerolog.Ctx(ctx).Info().Msg("Loaded initial DHCP leases for device manager")
+		}
+
+		// Start periodic DHCP lease refresh (every 5 minutes)
+		go func() {
+			const dhcpRefreshInterval = 5 * time.Minute
+
+			ticker := time.NewTicker(dhcpRefreshInterval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := s.deviceManager.RefreshDHCPLeases(ctx); err != nil {
+						zerolog.Ctx(ctx).Debug().Err(err).Msg("Failed to refresh DHCP leases")
+					}
+				}
+			}
+		}()
+	}
 
 	// Hook cache change notifier to push invalidation events to UI
 	dnsproxy.SetCacheChangeNotifier(func() {
@@ -552,19 +585,30 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, st)
 }
 
-type historyResponse struct {
-	Events []dnsproxy.QueryEvent `json:"events"`
-}
-
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
-	h := s.proxy.History()
-	events := make([]dnsproxy.QueryEvent, len(h))
-	copy(events, h)
+	// Parse pagination parameters
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+
+	// Default limit if not specified
+	if limit <= 0 {
+		limit = 100 // Default to 100 events per page
+	}
+
+	// Get paginated history
+	events := s.proxy.HistoryPaginated(offset, limit)
+	total := s.proxy.HistorySize()
 
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, historyResponse{Events: events})
+	render.JSON(w, r, map[string]any{
+		"events": events,
+		"total":  total,
+		"offset": offset,
+		"limit":  limit,
+	})
 }
 
+//nolint:cyclop // complex request handling with multiple methods
 func (s *Server) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -604,6 +648,16 @@ func (s *Server) handleUpstreams(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Validate number of upstreams
+		if len(in.Upstreams) > maxUpstreamsPerRequest {
+			render.Status(r, defaultBadRequestStatus)
+			render.JSON(w, r, map[string]string{
+				"error": fmt.Sprintf("too many upstreams (max %d, got %d)", maxUpstreamsPerRequest, len(in.Upstreams)),
+			})
+
+			return
+		}
+
 		if err := s.proxy.SetUpstreamsConfig(r.Context(), in.Upstreams); err != nil {
 			render.Status(r, defaultInternalServerErrorStatus)
 			render.JSON(w, r, map[string]string{"error": err.Error()})
@@ -633,6 +687,28 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 			render.JSON(w, r, map[string]string{"error": err.Error()})
 
 			return
+		}
+
+		// Validate number of hosts
+		if len(in.Hosts) > maxHostsPerRequest {
+			render.Status(r, defaultBadRequestStatus)
+			render.JSON(w, r, map[string]string{
+				"error": fmt.Sprintf("too many hosts (max %d, got %d)", maxHostsPerRequest, len(in.Hosts)),
+			})
+
+			return
+		}
+
+		// Validate all hosts
+		for i, host := range in.Hosts {
+			if err := host.Validate(); err != nil {
+				render.Status(r, defaultBadRequestStatus)
+				render.JSON(w, r, map[string]string{
+					"error": fmt.Sprintf("invalid host override #%d: %v", i+1, err),
+				})
+
+				return
+			}
 		}
 
 		if err := s.proxy.SetHosts(r.Context(), in.Hosts); err != nil {
@@ -1427,6 +1503,17 @@ func (s *Server) buildMiddlewareChain(ctx context.Context) http.Handler {
 
 	var h http.Handler = s.mux
 
+	// Request size limiting middleware
+	maxRequestSize := int64(defaultMaxRequestSize)
+	if cfg := s.proxy.GetConfig(); cfg != nil && cfg.HTTP.MaxRequestSize > 0 {
+		maxRequestSize = cfg.HTTP.MaxRequestSize
+	}
+
+	h = limitRequestSize(h, maxRequestSize)
+
+	// Gzip compression middleware (for large responses)
+	h = gzipCompressionMiddleware(h)
+
 	// CORS
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  func(_ string) bool { return true },
@@ -1465,6 +1552,79 @@ func (s *Server) buildMiddlewareChain(ctx context.Context) http.Handler {
 
 	// OTEL wrapper
 	return otelhttp.NewHandler(h, "dashboardhttp")
+}
+
+// limitRequestSize limits the size of request body.
+func limitRequestSize(next http.Handler, maxSize int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only limit POST/PUT/PATCH requests with body
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			r.Body = http.MaxBytesReader(w, r.Body, maxSize)
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// gzipCompressionMiddleware compresses responses with gzip if client supports it.
+func gzipCompressionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip compression for WebSocket
+		if strings.Contains(r.Header.Get("Upgrade"), "websocket") {
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
+		// Check if client accepts gzip
+		acceptEncoding := r.Header.Get("Accept-Encoding")
+		if !strings.Contains(acceptEncoding, "gzip") {
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
+		// Create gzip writer
+		gz := gzip.NewWriter(w)
+
+		ctx := r.Context()
+
+		defer func() {
+			if err := gz.Close(); err != nil {
+				zerolog.Ctx(ctx).Error().Err(err).Msg("failed to close gzip writer")
+			}
+		}()
+
+		// Wrap response writer
+		gzw := &gzipResponseWriter{
+			ResponseWriter: w,
+			Writer:         gz,
+		}
+
+		// Set Content-Encoding header before calling next handler
+		w.Header().Set("Content-Encoding", "gzip")
+		next.ServeHTTP(gzw, r)
+	})
+}
+
+// gzipResponseWriter wraps http.ResponseWriter with gzip.Writer.
+type gzipResponseWriter struct {
+	http.ResponseWriter
+
+	Writer *gzip.Writer
+}
+
+func (gzw *gzipResponseWriter) Write(b []byte) (int, error) {
+	// Set Content-Type if not already set
+	if gzw.Header().Get("Content-Type") == "" {
+		gzw.Header().Set("Content-Type", http.DetectContentType(b))
+	}
+
+	return gzw.Writer.Write(b)
+}
+
+func (gzw *gzipResponseWriter) WriteHeader(statusCode int) {
+	gzw.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (s *Server) createServer(ctx context.Context, handler http.Handler) *http.Server {

@@ -29,7 +29,7 @@ func TestAPIHandler_GetRoles(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -37,12 +37,12 @@ func TestAPIHandler_GetRoles(t *testing.T) {
 	assert.Contains(t, response, "roles")
 	assert.Contains(t, response, "count")
 
-	roles, ok := response["roles"].([]interface{})
+	roles, ok := response["roles"].([]any)
 	require.True(t, ok)
 	assert.Len(t, roles, 2)
 
 	// Check admin role
-	adminRole, ok := roles[0].(map[string]interface{})
+	adminRole, ok := roles[0].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "admin", adminRole["name"])
 	description, ok := adminRole["description"].(string)
@@ -54,7 +54,7 @@ func TestAPIHandler_GetRoles(t *testing.T) {
 	assert.Positive(t, int(permissionsCount))
 
 	// Check user role
-	userRole, ok := roles[1].(map[string]interface{})
+	userRole, ok := roles[1].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "user", userRole["name"])
 	userDescription, ok := userRole["description"].(string)
@@ -114,7 +114,7 @@ func TestAPIHandler_GetRolePermissions(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 
 			if !tt.expectError {
-				var response map[string]interface{}
+				var response map[string]any
 
 				err := json.Unmarshal(w.Body.Bytes(), &response)
 				require.NoError(t, err)
@@ -126,11 +126,11 @@ func TestAPIHandler_GetRolePermissions(t *testing.T) {
 
 				assert.Equal(t, tt.role, response["role"])
 
-				permissions, ok := response["permissions"].([]interface{})
+				permissions, ok := response["permissions"].([]any)
 				require.True(t, ok)
 				assert.NotEmpty(t, permissions)
 
-				categories, ok := response["categories"].(map[string]interface{})
+				categories, ok := response["categories"].(map[string]any)
 				require.True(t, ok)
 				assert.NotEmpty(t, categories)
 			}
@@ -274,7 +274,7 @@ func TestAPIHandler_GetUsers(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -283,13 +283,13 @@ func TestAPIHandler_GetUsers(t *testing.T) {
 	assert.Contains(t, response, "count")
 	assert.InEpsilon(t, float64(2), response["count"], 0.01)
 
-	users, ok := response["users"].([]interface{})
+	users, ok := response["users"].([]any)
 	require.True(t, ok)
 	assert.Len(t, users, 2)
 
 	// Check that passwords are not exposed
 	for _, userInterface := range users {
-		user, ok := userInterface.(map[string]interface{})
+		user, ok := userInterface.(map[string]any)
 		require.True(t, ok)
 		assert.NotContains(t, user, "password")
 		assert.Contains(t, user, "email")

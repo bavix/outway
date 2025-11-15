@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/miekg/dns"
+	"github.com/rs/zerolog"
 
 	"github.com/bavix/outway/internal/config"
 )
@@ -15,10 +16,13 @@ const (
 )
 
 // HostsResolver answers from static hosts list; falls through to Next if no match.
+// If HostsManager is provided, it reads hosts dynamically from manager (thread-safe).
+// Otherwise, uses static Hosts slice.
 type HostsResolver struct {
-	Next  Resolver
-	Hosts []config.HostOverride
-	Cfg   *config.Config
+	Next         Resolver
+	Hosts        []config.HostOverride // Static hosts (used if HostsManager is nil)
+	HostsManager HostsManager          // Dynamic hosts manager (optional)
+	Cfg          *config.Config
 }
 
 func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) { //nolint:gocognit,cyclop,funlen
@@ -29,6 +33,14 @@ func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, stri
 	name := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(q.Question[0].Name, ".")))
 	qtype := q.Question[0].Qtype
 
+	// Get hosts dynamically from manager if available, otherwise use static hosts
+	var hosts []config.HostOverride
+	if h.HostsManager != nil {
+		hosts = h.HostsManager.GetHosts()
+	} else {
+		hosts = h.Hosts
+	}
+
 	var (
 		aRecords    []net.IP
 		aaaaRecords []net.IP
@@ -36,7 +48,7 @@ func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, stri
 
 	ttl := uint32(defaultHostsTTL)
 
-	for _, ho := range h.Hosts {
+	for _, ho := range hosts {
 		if matchDomainPattern(ho.Pattern, name) {
 			for _, s := range ho.A {
 				if ip := net.ParseIP(s); ip != nil {
@@ -61,6 +73,15 @@ func (h *HostsResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, stri
 	if len(aRecords) == 0 && len(aaaaRecords) == 0 {
 		return h.Next.Resolve(ctx, q)
 	}
+
+	// Log hosts match at debug level
+	zerolog.Ctx(ctx).Debug().
+		Str("query", name).
+		Uint16("qtype", qtype).
+		Int("a_records", len(aRecords)).
+		Int("aaaa_records", len(aaaaRecords)).
+		Uint32("ttl", ttl).
+		Msg("hosts override matched")
 
 	// Clamp TTL to configured cache bounds if available
 	if h.Cfg != nil && h.Cfg.Cache.Enabled {

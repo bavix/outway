@@ -144,7 +144,7 @@ func TestWOLResolver_UpdateWOLConfig(t *testing.T) {
 
 	resolver := lanresolver.NewWOLResolver(nextResolver, zoneDetector, leaseManager)
 
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"enabled": true,
 	}
 
