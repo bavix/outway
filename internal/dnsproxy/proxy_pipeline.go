@@ -1,3 +1,4 @@
+// Package dnsproxy provides DNS proxy functionality with resolver pipeline.
 // nosemgrep: go.lang.security.audit.crypto.math_random.math-random-used
 package dnsproxy
 
@@ -7,14 +8,19 @@ import (
 	"slices"
 
 	"github.com/miekg/dns"
+	"github.com/rs/zerolog"
 
 	"github.com/bavix/outway/internal/config"
 	"github.com/bavix/outway/internal/lanresolver"
 	"github.com/bavix/outway/internal/localzone"
 )
 
-//nolint:funlen
+//nolint:funlen,cyclop // complex pipeline building logic
 func (p *Proxy) rebuildResolver(ctx context.Context) {
+	logger := zerolog.Ctx(ctx)
+
+	logger.Info().Msg("rebuilding DNS resolver pipeline")
+
 	// Build upstream resolvers using weighted order from config
 	strategies := []UpstreamStrategy{UDPStrategy{}, TCPStrategy{}, DoHStrategy{}, DotStrategy{}}
 	deps := StrategyDeps{
@@ -31,8 +37,11 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 	// Get upstreams from manager
 	rs := p.upstreams.RebuildResolvers(ctx, strategies, deps)
 
+	logger.Debug().Int("resolvers_count", len(rs)).Msg("upstream resolvers rebuilt")
+
 	// Ensure we have at least one resolver
 	if len(rs) == 0 {
+		logger.Warn().Msg("no resolvers created, using default fallback resolvers")
 		// If no resolvers were created, create a default fallback resolver
 		defaultUpstreams := []string{"udp:8.8.8.8:53", "udp:1.1.1.1:53"}
 		for _, raw := range defaultUpstreams {
@@ -93,6 +102,12 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 	// Place metrics outermost to include cache/hosts/upstreams in duration
 	root := Resolver(&MetricsResolver{Next: core})
 	p.active.Store(root)
+
+	logger.Info().
+		Int("upstreams", len(rs)).
+		Bool("cache_enabled", cfg != nil && cfg.Cache.Enabled).
+		Bool("serve_stale", cfg != nil && cfg.Cache.ServeStale).
+		Msg("DNS resolver pipeline rebuilt successfully")
 }
 
 func (p *Proxy) buildLegacyResolvers(strategies []UpstreamStrategy, deps StrategyDeps) []Resolver {

@@ -147,7 +147,7 @@ func (h *LocalZonesHandler) handleResolve(w http.ResponseWriter, r *http.Request
 	// Check if it's a local zone
 	isLocal, zone := h.lanResolver.IsLocalZone(name)
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		"hostname":      name,
 		"is_local":      isLocal,
 		"zone":          zone,
@@ -157,9 +157,9 @@ func (h *LocalZonesHandler) handleResolve(w http.ResponseWriter, r *http.Request
 	}
 
 	// Add answer details
-	answers := make([]map[string]interface{}, 0, len(response.Answer))
+	answers := make([]map[string]any, 0, len(response.Answer))
 	for _, rr := range response.Answer {
-		answer := map[string]interface{}{
+		answer := map[string]any{
 			"name":  rr.Header().Name,
 			"type":  rr.Header().Rrtype,
 			"class": rr.Header().Class,
@@ -250,7 +250,7 @@ func (h *LocalZonesHandler) sendUpdate(conn *websocket.Conn) {
 	zones, _ := h.zoneDetector.DetectZones()
 	leases := h.leaseManager.GetAllLeases()
 
-	update := map[string]interface{}{
+	update := map[string]any{
 		"type":   "update",
 		"zones":  zones,
 		"leases": leases,
@@ -269,7 +269,7 @@ func (h *LocalZonesHandler) BroadcastUpdate() {
 	zones, _ := h.zoneDetector.DetectZones()
 	leases := h.leaseManager.GetAllLeases()
 
-	update := map[string]interface{}{
+	update := map[string]any{
 		"type":   "update",
 		"zones":  zones,
 		"leases": leases,

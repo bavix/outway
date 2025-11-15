@@ -170,7 +170,7 @@ func (w *WakeOnLan) SetConfig(config *Config) error {
 }
 
 // UpdateConfig updates specific configuration fields.
-func (w *WakeOnLan) UpdateConfig(updates map[string]interface{}) error {
+func (w *WakeOnLan) UpdateConfig(updates map[string]any) error {
 	return w.configManager.UpdateConfig(updates)
 }
 

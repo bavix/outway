@@ -15,7 +15,7 @@ const (
 	minTTLSeconds = 30 // Minimum TTL in seconds
 )
 
-// Interface name validation regex.
+// IfaceNameRe is the regex for interface name validation.
 var IfaceNameRe = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,32}$`)
 
 // IsSafeIfaceName verifies interface names to a conservative charset to avoid injection via args.

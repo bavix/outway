@@ -1,6 +1,7 @@
 package localzone_test
 
 import (
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -48,15 +49,7 @@ config dnsmasq 'home'
 	}
 
 	for _, expectedZone := range expected {
-		found := false
-
-		for _, zone := range zones {
-			if zone == expectedZone {
-				found = true
-
-				break
-			}
-		}
+		found := slices.Contains(zones, expectedZone)
 
 		if !found {
 			t.Errorf("Expected zone %s not found in %v", expectedZone, zones)

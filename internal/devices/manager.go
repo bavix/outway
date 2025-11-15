@@ -72,12 +72,12 @@ func (fw *FileWatcher) Close() error {
 }
 
 // GetDisplayInfo returns device information formatted for display.
-func (d *Device) GetDisplayInfo() map[string]interface{} {
+func (d *Device) GetDisplayInfo() map[string]any {
 	if d == nil {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"id":        d.ID,
 		"name":      d.Name,
 		"mac":       d.MAC,
@@ -281,10 +281,20 @@ func NewDeviceManager() *DeviceManager {
 	return dm
 }
 
-// GetAllDevices returns all managed devices.
-// Note: This method doesn't load DHCP leases automatically.
-// Use ScanNetwork() or RefreshDHCPLeases() to load data first.
-func (dm *DeviceManager) GetAllDevices() []*Device {
+// GetAllDevices returns all devices. Automatically loads from DHCP leases if device list is empty.
+func (dm *DeviceManager) GetAllDevices(ctx context.Context) []*Device {
+	dm.mu.RLock()
+	deviceCount := len(dm.devices)
+	dm.mu.RUnlock()
+
+	// Auto-load from DHCP if no devices found
+	if deviceCount == 0 {
+		if err := dm.RefreshDHCPLeases(ctx); err != nil {
+			// Log error but don't fail - devices might not be available
+			_ = err
+		}
+	}
+
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
 
@@ -554,9 +564,9 @@ func (dm *DeviceManager) WakeAllDevices(ctx context.Context) ([]*Device, error) 
 }
 
 // ResolveDevice resolves a device hostname to IP addresses.
-func (dm *DeviceManager) ResolveDevice(hostname string) ([]string, error) {
+func (dm *DeviceManager) ResolveDevice(ctx context.Context, hostname string) ([]string, error) {
 	// Try to find device by hostname
-	for _, device := range dm.GetAllDevices() {
+	for _, device := range dm.GetAllDevices(ctx) {
 		if device.Hostname == hostname {
 			return []string{device.IP}, nil
 		}
@@ -644,11 +654,11 @@ func (dm *DeviceManager) DeleteDevice(id string) error {
 }
 
 // GetStats returns device statistics.
-func (dm *DeviceManager) GetStats() map[string]interface{} {
+func (dm *DeviceManager) GetStats() map[string]any {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"total_devices":      len(dm.devices),
 		"online_devices":     0,
 		"wakeable_devices":   0,

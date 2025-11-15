@@ -39,7 +39,7 @@ func TestAPIHandler_GetDevices(t *testing.T) {
 	// Check response
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -48,11 +48,11 @@ func TestAPIHandler_GetDevices(t *testing.T) {
 	assert.Contains(t, response, "count")
 	assert.InEpsilon(t, float64(1), response["count"], 0.01)
 
-	devices, ok := response["devices"].([]interface{})
+	devices, ok := response["devices"].([]any)
 	require.True(t, ok)
 	assert.Len(t, devices, 1)
 
-	device, ok := devices[0].(map[string]interface{})
+	device, ok := devices[0].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "Test Device", device["name"])
 	assert.Equal(t, "aa:bb:cc:dd:ee:ff", device["mac"])
@@ -84,7 +84,7 @@ func TestAPIHandler_GetDevice(t *testing.T) {
 	// Check response
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestAPIHandler_GetDevice_NotFound(t *testing.T) {
 	// Check response
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestAPIHandler_AddDevice(t *testing.T) {
 	// Check response - should return 501 since not implemented
 	assert.Equal(t, http.StatusNotImplemented, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestAPIHandler_AddDevice_InvalidJSON(t *testing.T) {
 	// Check response - should return 501 since not implemented
 	assert.Equal(t, http.StatusNotImplemented, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -239,7 +239,7 @@ func TestAPIHandler_UpdateDevice(t *testing.T) {
 	// Check response - should return 501 since not implemented
 	assert.Equal(t, http.StatusNotImplemented, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -274,7 +274,7 @@ func TestAPIHandler_DeleteDevice(t *testing.T) {
 	// Check response - should return 501 since not implemented
 	assert.Equal(t, http.StatusNotImplemented, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -312,7 +312,7 @@ func TestAPIHandler_GetStats(t *testing.T) {
 	// Check response
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -354,18 +354,18 @@ func TestAPIHandler_GetOnlineDevices(t *testing.T) {
 	// Check response
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
 	assert.InEpsilon(t, float64(1), response["count"], 0.01)
 
-	devices, ok := response["devices"].([]interface{})
+	devices, ok := response["devices"].([]any)
 	require.True(t, ok)
 	assert.Len(t, devices, 1)
 
-	device, ok := devices[0].(map[string]interface{})
+	device, ok := devices[0].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "Online Device", device["name"])
 }
@@ -402,18 +402,18 @@ func TestAPIHandler_GetWakeableDevices(t *testing.T) {
 	// Check response
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
 	assert.InEpsilon(t, float64(1), response["count"], 0.01)
 
-	devices, ok := response["devices"].([]interface{})
+	devices, ok := response["devices"].([]any)
 	require.True(t, ok)
 	assert.Len(t, devices, 1)
 
-	device, ok := devices[0].(map[string]interface{})
+	device, ok := devices[0].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "Wakeable Device", device["name"])
 }
@@ -446,7 +446,7 @@ func TestAPIHandler_GetDevicesByType(t *testing.T) {
 	// Check response
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var response map[string]interface{}
+	var response map[string]any
 
 	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
@@ -454,11 +454,11 @@ func TestAPIHandler_GetDevicesByType(t *testing.T) {
 	assert.InEpsilon(t, float64(1), response["count"], 0.01)
 	assert.Equal(t, "computer", response["type"])
 
-	devices, ok := response["devices"].([]interface{})
+	devices, ok := response["devices"].([]any)
 	require.True(t, ok)
 	assert.Len(t, devices, 1)
 
-	device, ok := devices[0].(map[string]interface{})
+	device, ok := devices[0].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "MacBook", device["name"])
 }

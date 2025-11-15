@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	DefaultAccessTokenTTLMinutes  = 5
-	DefaultRefreshTokenTTLMinutes = 30
+	DefaultAccessTokenTTLMinutes  = 30          // Increased from 5 to 30 minutes
+	DefaultRefreshTokenTTLMinutes = 7 * 24 * 60 // 7 days (increased from 30 minutes)
 	JWTSecretLength               = 32
 	RefreshTokenLength            = 32
 	CleanupIntervalMinutes        = 5
@@ -97,13 +97,33 @@ type AuthStatusResponse struct {
 
 // NewService creates a new authentication service.
 func NewService(cfg *config.Config) (*Service, error) {
-	// Generate JWT secret in memory (not persisted)
-	secret, err := generateJWTSecret()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate JWT secret: %w", err)
+	var (
+		secret []byte
+		err    error
+	)
+
+	// Load JWT secret from config or generate new one
+
+	if cfg.JWTSecret != "" {
+		secret, err = base64.StdEncoding.DecodeString(cfg.JWTSecret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode JWT secret from config: %w", err)
+		}
+	} else {
+		// Generate new JWT secret
+		secret, err = generateJWTSecret()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate JWT secret: %w", err)
+		}
+
+		// Save to config
+		cfg.JWTSecret = base64.StdEncoding.EncodeToString(secret)
+		if err := cfg.Save(); err != nil {
+			return nil, fmt.Errorf("failed to save JWT secret: %w", err)
+		}
 	}
 
-	// Use default TTLs (5 minutes for access, 30 minutes for refresh)
+	// Use default TTLs (30 minutes for access, 7 days for refresh)
 	accessTokenTTL := time.Duration(DefaultAccessTokenTTLMinutes) * time.Minute
 	refreshTokenTTL := time.Duration(DefaultRefreshTokenTTLMinutes) * time.Minute
 
@@ -114,6 +134,9 @@ func NewService(cfg *config.Config) (*Service, error) {
 		refreshTokenTTL: refreshTokenTTL,
 		refreshTokens:   make(map[string]*RefreshToken),
 	}
+
+	// Load refresh tokens from config
+	service.loadRefreshTokensFromConfig()
 
 	// Start cleanup goroutine for expired refresh tokens
 	go service.cleanupExpiredTokens()
@@ -230,7 +253,7 @@ func (s *Service) CreateFirstUser(req *FirstUserRequest) (*LoginResponse, error)
 
 // ValidateToken validates a JWT token and returns the claims.
 func (s *Service) ValidateToken(tokenString string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
 		// Validate signing method
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("%w: %v", ErrUnexpectedSigningMethod, token.Header["alg"])
@@ -295,6 +318,12 @@ func (s *Service) Refresh(req *RefreshRequest) (*RefreshResponse, error) {
 	s.refreshTokensMu.Lock()
 	delete(s.refreshTokens, req.RefreshToken)
 	s.refreshTokensMu.Unlock()
+
+	// Save to config
+	if err := s.saveRefreshTokensToConfig(); err != nil {
+		// Log error but don't fail refresh
+		_ = err
+	}
 
 	s.authMu.Unlock()
 
@@ -364,7 +393,53 @@ func (s *Service) generateRefreshToken(email string) (string, error) {
 	s.refreshTokens[token] = refreshToken
 	s.refreshTokensMu.Unlock()
 
+	// Save to config
+	if err := s.saveRefreshTokensToConfig(); err != nil {
+		// Log error but don't fail token generation
+		_ = err
+	}
+
 	return token, nil
+}
+
+// loadRefreshTokensFromConfig loads refresh tokens from config.
+func (s *Service) loadRefreshTokensFromConfig() {
+	s.refreshTokensMu.Lock()
+	defer s.refreshTokensMu.Unlock()
+
+	now := time.Now()
+	for _, rt := range s.config.RefreshTokens {
+		// Only load non-expired tokens
+		if now.Before(rt.ExpiresAt) {
+			s.refreshTokens[rt.Token] = &RefreshToken{
+				Token:     rt.Token,
+				UserEmail: rt.UserEmail,
+				ExpiresAt: rt.ExpiresAt,
+				CreatedAt: rt.CreatedAt,
+			}
+		}
+	}
+}
+
+// saveRefreshTokensToConfig saves refresh tokens to config.
+func (s *Service) saveRefreshTokensToConfig() error {
+	s.refreshTokensMu.RLock()
+	defer s.refreshTokensMu.RUnlock()
+
+	// Convert map to slice
+	tokens := make([]config.RefreshToken, 0, len(s.refreshTokens))
+	for _, rt := range s.refreshTokens {
+		tokens = append(tokens, config.RefreshToken{
+			Token:     rt.Token,
+			UserEmail: rt.UserEmail,
+			ExpiresAt: rt.ExpiresAt,
+			CreatedAt: rt.CreatedAt,
+		})
+	}
+
+	s.config.RefreshTokens = tokens
+
+	return s.config.Save()
 }
 
 // cleanupExpiredTokens removes expired refresh tokens periodically.
@@ -377,13 +452,25 @@ func (s *Service) cleanupExpiredTokens() {
 
 		s.refreshTokensMu.Lock()
 
+		needsSave := false
+
 		for token, refreshToken := range s.refreshTokens {
 			if now.After(refreshToken.ExpiresAt) {
 				delete(s.refreshTokens, token)
+
+				needsSave = true
 			}
 		}
 
 		s.refreshTokensMu.Unlock()
+
+		// Save to config if tokens were removed
+		if needsSave {
+			if err := s.saveRefreshTokensToConfig(); err != nil {
+				// Log error but continue
+				_ = err
+			}
+		}
 	}
 }
 

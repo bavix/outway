@@ -113,7 +113,7 @@ func (wr *WOLResolver) SetWOLConfig(config *wol.Config) error {
 }
 
 // UpdateWOLConfig updates specific Wake-on-LAN configuration fields.
-func (wr *WOLResolver) UpdateWOLConfig(updates map[string]interface{}) error {
+func (wr *WOLResolver) UpdateWOLConfig(updates map[string]any) error {
 	wr.mu.Lock()
 	defer wr.mu.Unlock()
 
@@ -150,7 +150,7 @@ func (wr *WOLResolver) ValidateWOLMAC(mac string) error {
 }
 
 // GetWOLStatus returns the Wake-on-LAN service status.
-func (wr *WOLResolver) GetWOLStatus(ctx context.Context) map[string]interface{} {
+func (wr *WOLResolver) GetWOLStatus(ctx context.Context) map[string]any {
 	wr.mu.RLock()
 	defer wr.mu.RUnlock()
 
@@ -172,7 +172,7 @@ func (wr *WOLResolver) GetWOLStatus(ctx context.Context) map[string]interface{} 
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"enabled":          wr.wolService.IsEnabled(),
 		"config":           config,
 		"interfaces_count": len(interfaces),

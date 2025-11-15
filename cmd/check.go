@@ -141,8 +141,8 @@ func checkNetworkInterfaces(ctx context.Context, cfg *config.Config) error {
 
 	availableInterfaces := make(map[string]bool)
 
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(out), "\n")
+	for line := range lines {
 		if strings.Contains(line, ":") {
 			parts := strings.Fields(line)
 			if len(parts) >= minPartsForInterface {

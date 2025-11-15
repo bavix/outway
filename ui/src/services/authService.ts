@@ -27,6 +27,7 @@ export class AuthService {
   constructor() {
     this.loadFromStorage();
     this.setupRefreshTimer();
+    this.setupVisibilityChangeHandler();
   }
 
   // State management
@@ -327,6 +328,40 @@ export class AuthService {
     } catch (error) {
       console.error('Failed to parse JWT token for refresh timer:', error);
       this.setupFallbackRefreshTimer();
+    }
+  }
+
+  // Setup visibility change handler to check token when page becomes visible
+  private setupVisibilityChangeHandler(): void {
+    if (typeof document === 'undefined') return; // SSR safety
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        // Page became visible, check if token needs refresh
+        this.checkAndRefreshTokenIfNeeded();
+      }
+    });
+  }
+
+  // Check token expiration and refresh if needed
+  private async checkAndRefreshTokenIfNeeded(): Promise<void> {
+    if (!this.state.accessToken || !this.state.refreshToken) return;
+
+    try {
+      const tokenPayload = this.parseJWT(this.state.accessToken);
+      if (!tokenPayload || !tokenPayload.exp) return;
+
+      const now = Math.floor(Date.now() / 1000);
+      const exp = tokenPayload.exp;
+      const timeUntilExpiry = (exp - now) * 1000; // Convert to milliseconds
+
+      // If token expires in less than 5 minutes, refresh it
+      if (timeUntilExpiry < 5 * 60 * 1000) {
+        console.log('Token expires soon, refreshing on visibility change...');
+        await this.refreshToken();
+      }
+    } catch (error) {
+      console.error('Failed to check token on visibility change:', error);
     }
   }
 
