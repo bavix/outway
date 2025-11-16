@@ -90,7 +90,7 @@ func TestSetUpstreamsConfig_Validation(t *testing.T) {
 				},
 			},
 			wantErr:     true,
-			errContains: "weight cannot be negative",
+			errContains: "upstream has invalid weight",
 		},
 		{
 			name: "multiple upstreams with one invalid",
