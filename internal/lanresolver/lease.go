@@ -276,7 +276,8 @@ func (lm *LeaseManager) ParseLeaseLine(line string) *Lease {
 	}
 
 	// Hostname is optional (can be empty or "*" on OpenWrt)
-	if len(parts) > 3 {
+	const minLeasePartsWithHostname = 4 // expire, MAC, IP, hostname
+	if len(parts) > minLeasePartsWithHostname-1 {
 		hostname := parts[3]
 		// Normalize empty hostname or "*" to empty string
 		if hostname != "*" && hostname != "" {
@@ -285,7 +286,8 @@ func (lm *LeaseManager) ParseLeaseLine(line string) *Lease {
 	}
 
 	// ID is optional
-	if len(parts) > 4 {
+	const minLeasePartsWithID = 5 // expire, MAC, IP, hostname, ID
+	if len(parts) > minLeasePartsWithID-1 {
 		lease.ID = parts[4]
 	}
 

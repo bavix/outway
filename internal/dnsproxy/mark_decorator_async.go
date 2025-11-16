@@ -86,7 +86,31 @@ func (m *AsyncMarkResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, 
 	return out, src, err
 }
 
+// Stop gracefully stops the AsyncMarkResolver.
+func (m *AsyncMarkResolver) Stop() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.workerRunning {
+		return
+	}
+
+	m.workerRunning = false
+	close(m.workerStop)
+	m.workerWg.Wait()
+
+	// Process any remaining marks before stopping
+	if m.debounceTimer != nil {
+		m.debounceTimer.Stop()
+	}
+
+	// Use background context for cleanup operation
+	m.processPendingMarks(context.Background())
+}
+
 // queueMarks queues IP addresses for async marking.
+//
+//nolint:funlen // complex IP extraction and queuing logic
 func (m *AsyncMarkResolver) queueMarks(ctx context.Context, answers []dns.RR, rule config.Rule, domain string) {
 	now := time.Now()
 
@@ -151,8 +175,10 @@ func (m *AsyncMarkResolver) queueMarks(ctx context.Context, answers []dns.RR, ru
 			m.debounceTimer.Stop()
 		}
 
+		// Capture context for debounce callback
+		debounceCtx := ctx
 		m.debounceTimer = time.AfterFunc(m.debounceDelay, func() {
-			m.processPendingMarks()
+			m.processPendingMarks(debounceCtx)
 		})
 		m.mu.Unlock()
 
@@ -166,7 +192,7 @@ func (m *AsyncMarkResolver) queueMarks(ctx context.Context, answers []dns.RR, ru
 }
 
 // processPendingMarks processes all pending mark requests in batch.
-func (m *AsyncMarkResolver) processPendingMarks() {
+func (m *AsyncMarkResolver) processPendingMarks(ctx context.Context) {
 	m.mu.Lock()
 
 	if len(m.pendingMarks) == 0 {
@@ -185,12 +211,11 @@ func (m *AsyncMarkResolver) processPendingMarks() {
 	m.mu.Unlock()
 
 	// Process marks in background
-	go m.markIPsBatch(marks)
+	go m.markIPsBatch(ctx, marks)
 }
 
 // markIPsBatch marks a batch of IP addresses.
-func (m *AsyncMarkResolver) markIPsBatch(marks []*markRequest) {
-	ctx := context.Background()
+func (m *AsyncMarkResolver) markIPsBatch(ctx context.Context, marks []*markRequest) {
 	logger := zerolog.Ctx(ctx).With().Int("batch_size", len(marks)).Logger()
 
 	logger.Debug().Msg("processing batch of IP marks")
@@ -217,7 +242,7 @@ func (m *AsyncMarkResolver) markIPsBatch(marks []*markRequest) {
 
 		m.mu.RUnlock()
 
-		// Mark IP
+		// Mark IP using batch context
 		if err := m.Backend.MarkIP(ctx, req.iface, req.ip, req.ttl); err != nil {
 			logger.Error().
 				Err(err).
@@ -267,7 +292,9 @@ func (m *AsyncMarkResolver) startWorker() {
 	m.mu.Unlock()
 
 	m.workerWg.Go(func() {
-		ticker := time.NewTicker(30 * time.Second)
+		const cacheCleanupInterval = 30 * time.Second
+
+		ticker := time.NewTicker(cacheCleanupInterval)
 		defer ticker.Stop()
 
 		for {
@@ -303,29 +330,4 @@ func (m *AsyncMarkResolver) cleanupCache() {
 			Int("remaining", len(m.markedIPs)).
 			Msg("cleaned up expired IP marks from cache")
 	}
-}
-
-// Stop stops the async mark resolver and cleans up resources.
-func (m *AsyncMarkResolver) Stop() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if !m.workerRunning {
-		return
-	}
-
-	close(m.workerStop)
-	m.workerRunning = false
-
-	if m.debounceTimer != nil {
-		m.debounceTimer.Stop()
-	}
-
-	// Process any remaining pending marks
-	if len(m.pendingMarks) > 0 {
-		m.processPendingMarks()
-	}
-
-	// Wait for worker to finish
-	m.workerWg.Wait()
 }

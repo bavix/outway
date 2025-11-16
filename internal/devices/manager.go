@@ -752,6 +752,7 @@ func (dm *DeviceManager) Close() error {
 	return nil
 }
 
+//nolint:gocognit,cyclop,funlen // complex DHCP lease parsing and device management logic
 func (dm *DeviceManager) loadFromDHCPLeases(ctx context.Context) []*Device {
 	logger := zerolog.Ctx(ctx)
 
@@ -826,6 +827,7 @@ func (dm *DeviceManager) loadFromDHCPLeases(ctx context.Context) []*Device {
 			}
 		}
 
+		//nolint:nestif // complex device update logic with multiple conditions
 		if exists {
 			// Update existing device
 			device = existingDevice

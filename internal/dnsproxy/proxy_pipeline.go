@@ -79,6 +79,7 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 
 	// Create async mark resolver for better performance (non-blocking IP marking)
 	// This prevents DNS queries from being blocked by slow firewall operations
+	//nolint:contextcheck // NewAsyncMarkResolver doesn't need context, worker starts in background
 	mark := NewAsyncMarkResolver(
 		next,
 		p.backend,

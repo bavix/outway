@@ -25,12 +25,16 @@ import (
 )
 
 var (
-	errProxyConfigurationNil      = errors.New("proxy configuration is nil")
-	errNilDNSMessageForDoH        = errors.New("nil DNS message for DoH")
-	errDoHClientNotInitialized    = errors.New("DoH client not initialized")
-	errDoHStatus                  = errors.New("doh status")
-	errInvalidUpstream            = errors.New("invalid upstream")
-	errAtLeastOneUpstreamRequired = errors.New("at least one upstream is required")
+	errProxyConfigurationNil        = errors.New("proxy configuration is nil")
+	errNilDNSMessageForDoH          = errors.New("nil DNS message for DoH")
+	errDoHClientNotInitialized      = errors.New("DoH client not initialized")
+	errDoHStatus                    = errors.New("doh status")
+	errInvalidUpstream              = errors.New("invalid upstream")
+	errAtLeastOneUpstreamRequired   = errors.New("at least one upstream is required")
+	errUpstreamNameCannotBeEmpty    = errors.New("upstream name cannot be empty")
+	errUpstreamAddressCannotBeEmpty = errors.New("upstream address cannot be empty")
+	errUpstreamInvalidWeight        = errors.New("upstream has invalid weight")
+	errTooManyHosts                 = errors.New("too many hosts")
 )
 
 const (
@@ -170,7 +174,7 @@ type Proxy struct {
 // ResolverActive returns the current active resolver atomically.
 //
 //nolint:ireturn
-func (p *Proxy) ResolverActive() Resolver {
+func (p *Proxy) ResolverActive() Resolver { // interface return is required for resolver abstraction
 	if v := p.active.Load(); v != nil {
 		if r, ok := v.(Resolver); ok {
 			return r
@@ -218,6 +222,7 @@ func New(cfg *config.Config, backend firewall.Backend) *Proxy {
 	return p
 }
 
+//nolint:funlen // complex startup logic with multiple components
 func (p *Proxy) Start(ctx context.Context) error {
 	cfg := p.config.GetConfig()
 	if cfg == nil {
@@ -272,6 +277,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 		// Stop async mark resolver
 		if p.asyncMarkRes != nil {
+			//nolint:contextcheck // Stop is a cleanup method, context not needed
 			p.asyncMarkRes.Stop()
 		}
 
@@ -645,30 +651,32 @@ func (p *Proxy) GetUpstreams() []string {
 }
 
 // SetUpstreamsConfig replaces upstreams with structured configs and rebuilds pipeline.
+//
+//nolint:cyclop,funlen // complex validation and processing logic
 func (p *Proxy) SetUpstreamsConfig(ctx context.Context, ups []config.UpstreamConfig) error {
 	logger := zerolog.Ctx(ctx).With().Int("upstreams_count", len(ups)).Logger()
 
 	logger.Info().Msg("updating upstreams configuration")
 
 	// 1) Validate all upstreams before processing (critical for preventing invalid state)
+	// Ensure at least one upstream
+	if len(ups) == 0 {
+		return errAtLeastOneUpstreamRequired
+	}
+
 	// Validate each upstream individually to catch errors early
 	for i, u := range ups {
 		if u.Name == "" {
-			return fmt.Errorf("upstream #%d: name cannot be empty", i+1)
+			return fmt.Errorf("upstream #%d: %w", i+1, errUpstreamNameCannotBeEmpty)
 		}
 
 		if u.Address == "" {
-			return fmt.Errorf("upstream '%s': address cannot be empty", u.Name)
+			return fmt.Errorf("upstream '%s': %w", u.Name, errUpstreamAddressCannotBeEmpty)
 		}
 
 		if u.Weight < 0 {
-			return fmt.Errorf("upstream '%s': weight cannot be negative (got %d)", u.Name, u.Weight)
+			return fmt.Errorf("upstream '%s': %w (got %d)", u.Name, errUpstreamInvalidWeight, u.Weight)
 		}
-	}
-
-	// Ensure at least one upstream
-	if len(ups) == 0 {
-		return errors.New("at least one upstream is required")
 	}
 
 	// 2) Prepare runtime view with detected types and sane weights
@@ -790,7 +798,7 @@ func (p *Proxy) SetHosts(ctx context.Context, hosts []config.HostOverride) error
 	// Validate hosts count before processing
 	const maxHostsPerRequest = 1000
 	if len(hosts) > maxHostsPerRequest {
-		return fmt.Errorf("too many hosts (max %d, got %d)", maxHostsPerRequest, len(hosts))
+		return fmt.Errorf("%w (max %d, got %d)", errTooManyHosts, maxHostsPerRequest, len(hosts))
 	}
 
 	// Update hosts in place (thread-safe, with validation)

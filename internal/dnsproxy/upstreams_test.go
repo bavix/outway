@@ -17,6 +17,8 @@ import (
 )
 
 // TestSetUpstreamsConfig_Validation tests validation of upstreams before update.
+//
+//nolint:funlen // comprehensive test cases
 func TestSetUpstreamsConfig_Validation(t *testing.T) {
 	t.Parallel()
 
@@ -194,6 +196,8 @@ func TestSetUpstreamsConfig_AtomicUpdate(t *testing.T) {
 }
 
 // TestSetUpstreamsConfig_TypeDetection tests automatic type detection.
+//
+//nolint:funlen // comprehensive test cases
 func TestSetUpstreamsConfig_TypeDetection(t *testing.T) {
 	t.Parallel()
 
@@ -242,7 +246,7 @@ func TestSetUpstreamsConfig_TypeDetection(t *testing.T) {
 		{
 			name:     "DoT with scheme",
 			address:  "tls://8.8.8.8:853",
-			expected:  "dot",
+			expected: "dot",
 		},
 		{
 			name:     "DoQ with scheme",
@@ -258,6 +262,7 @@ func TestSetUpstreamsConfig_TypeDetection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			// Create a fresh proxy for each test to avoid conflicts
 			testCfg := &config.Config{
 				Path: "/tmp/test-outway-upstreams-type-" + tt.name + ".yaml",
@@ -275,6 +280,7 @@ func TestSetUpstreamsConfig_TypeDetection(t *testing.T) {
 				},
 			}
 
+			//nolint:contextcheck // New doesn't require context
 			testProxy := dnsproxy.New(testCfg, &MockFirewallBackend{})
 			require.NotNil(t, testProxy)
 
@@ -295,10 +301,10 @@ func TestSetUpstreamsConfig_TypeDetection(t *testing.T) {
 			// The address format in GetUpstreams is "type:address"
 			// For DoT, tls:// is converted to dot://, so check for both
 			if tt.expected == "dot" {
-				assert.True(t, 
-					updatedUpstreams[0] == "dot:tls://8.8.8.8:853" || 
-					updatedUpstreams[0] == "dot:8.8.8.8:853" ||
-					strings.Contains(updatedUpstreams[0], "dot"),
+				assert.True(t,
+					updatedUpstreams[0] == "dot:tls://8.8.8.8:853" ||
+						updatedUpstreams[0] == "dot:8.8.8.8:853" ||
+						strings.Contains(updatedUpstreams[0], "dot"),
 					"Expected DoT type, got: %s", updatedUpstreams[0])
 			} else {
 				assert.Contains(t, updatedUpstreams[0], tt.expected)
@@ -468,6 +474,8 @@ func TestSetUpstreamsConfig_ResolverRemainsActive(t *testing.T) {
 }
 
 // TestSetUpstreamsConfig_ConcurrentUpdates tests concurrent updates are handled safely.
+//
+//nolint:funlen // concurrent test setup
 func TestSetUpstreamsConfig_ConcurrentUpdates(t *testing.T) {
 	t.Parallel()
 
@@ -494,14 +502,18 @@ func TestSetUpstreamsConfig_ConcurrentUpdates(t *testing.T) {
 	ctx := context.Background()
 
 	// Test concurrent updates
-	const numGoroutines = 10
-	const numUpdates = 5
+	const (
+		numGoroutines = 10
+		numUpdates    = 5
+	)
 
 	var wg sync.WaitGroup
+
 	errors := make(chan error, numGoroutines*numUpdates)
 
 	for i := range numGoroutines {
 		wg.Add(1)
+
 		go func(id int) {
 			defer wg.Done()
 
@@ -526,7 +538,7 @@ func TestSetUpstreamsConfig_ConcurrentUpdates(t *testing.T) {
 
 	// Check for errors
 	for err := range errors {
-		assert.NoError(t, err, "Concurrent update should not fail")
+		require.NoError(t, err, "Concurrent update should not fail")
 	}
 
 	// Verify final state is consistent
@@ -646,4 +658,3 @@ func TestSetUpstreamsConfig_MultipleFormats(t *testing.T) {
 	updatedUpstreams := proxy.GetUpstreams()
 	assert.Len(t, updatedUpstreams, 4)
 }
-
