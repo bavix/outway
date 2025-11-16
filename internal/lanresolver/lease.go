@@ -33,7 +33,7 @@ func (r *OSFileReader) ReadFile(path string) ([]byte, error) {
 // LeaseManager manages DHCP lease entries.
 type LeaseManager struct {
 	leasesPath string
-	leases     map[string]*Lease // hostname -> lease
+	leases     map[string]*Lease // MAC -> lease (changed from hostname to support devices without hostname)
 	mu         sync.RWMutex
 	fileReader FileReader
 }
@@ -89,6 +89,9 @@ func (lm *LeaseManager) LoadLeases() error {
 	}
 
 	lines := strings.SplitSeq(string(content), "\n")
+	parsedCount := 0
+	skippedCount := 0
+
 	for line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -96,20 +99,47 @@ func (lm *LeaseManager) LoadLeases() error {
 		}
 
 		lease := lm.ParseLeaseLine(line)
-		if lease != nil && lease.Hostname != "" {
-			lm.leases[lease.Hostname] = lease
+		if lease != nil {
+			// Use MAC as key to support devices without hostname (common on OpenWrt)
+			// This allows us to store and retrieve leases even when hostname is empty or "*"
+			if lease.MAC != "" {
+				lm.leases[lease.MAC] = lease
+				parsedCount++
+			} else {
+				skippedCount++
+			}
+		} else {
+			skippedCount++
 		}
 	}
 
 	return nil
 }
 
-// GetLease returns a lease by hostname.
+// GetLease returns a lease by hostname (searches by hostname field).
 func (lm *LeaseManager) GetLease(hostname string) *Lease {
 	lm.mu.RLock()
 	defer lm.mu.RUnlock()
 
-	lease, exists := lm.leases[hostname]
+	// Search through all leases to find one with matching hostname
+	for _, lease := range lm.leases {
+		if lease.Hostname == hostname {
+			// Check if lease is still valid
+			if time.Now().Before(lease.Expire) {
+				return lease
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetLeaseByMAC returns a lease by MAC address.
+func (lm *LeaseManager) GetLeaseByMAC(mac string) *Lease {
+	lm.mu.RLock()
+	defer lm.mu.RUnlock()
+
+	lease, exists := lm.leases[mac]
 	if !exists {
 		return nil
 	}
@@ -120,6 +150,24 @@ func (lm *LeaseManager) GetLease(hostname string) *Lease {
 	}
 
 	return lease
+}
+
+// GetLeaseByIP returns a lease by IP address.
+func (lm *LeaseManager) GetLeaseByIP(ip string) *Lease {
+	lm.mu.RLock()
+	defer lm.mu.RUnlock()
+
+	// Search through all leases to find one with matching IP
+	for _, lease := range lm.leases {
+		if lease.IP == ip {
+			// Check if lease is still valid
+			if time.Now().Before(lease.Expire) {
+				return lease
+			}
+		}
+	}
+
+	return nil
 }
 
 // GetAllLeases returns all valid leases.
@@ -197,12 +245,13 @@ func (lm *LeaseManager) GetLeaseCount() int {
 }
 
 // ParseLeaseLine parses a single line from the DHCP leases file.
-// Format: <expire> <mac> <ip> <hostname> <id>.
+// Format: <expire> <mac> <ip> <hostname> <id> (OpenWrt format).
+// Hostname can be empty, "*", or missing - we handle all cases.
 // ParseLeaseLine parses a single lease line (public for testing).
 func (lm *LeaseManager) ParseLeaseLine(line string) *Lease {
 	parts := strings.Fields(line)
 
-	const minLeaseParts = 4
+	const minLeaseParts = 3 // MAC, IP, and expire are required
 	if len(parts) < minLeaseParts {
 		return nil
 	}
@@ -221,14 +270,24 @@ func (lm *LeaseManager) ParseLeaseLine(line string) *Lease {
 	}
 
 	lease := &Lease{
-		Expire:   expire,
-		MAC:      parts[1],
-		IP:       parts[2],
-		Hostname: parts[3],
+		Expire: expire,
+		MAC:    parts[1],
+		IP:     parts[2],
+	}
+
+	// Hostname is optional (can be empty or "*" on OpenWrt)
+	const minLeasePartsWithHostname = 4 // expire, MAC, IP, hostname
+	if len(parts) > minLeasePartsWithHostname-1 {
+		hostname := parts[3]
+		// Normalize empty hostname or "*" to empty string
+		if hostname != "*" && hostname != "" {
+			lease.Hostname = hostname
+		}
 	}
 
 	// ID is optional
-	if len(parts) > minLeaseParts {
+	const minLeasePartsWithID = 5 // expire, MAC, IP, hostname, ID
+	if len(parts) > minLeasePartsWithID-1 {
 		lease.ID = parts[4]
 	}
 

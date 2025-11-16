@@ -2,6 +2,7 @@ package devices
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/render"
 	"github.com/gorilla/mux"
@@ -58,21 +59,7 @@ func (h *APIHandler) GetDevices(w http.ResponseWriter, r *http.Request) {
 	devices := h.manager.GetAllDevices(r.Context())
 
 	// Convert to API format
-	deviceList := make([]map[string]any, 0, len(devices))
-	for _, device := range devices {
-		deviceList = append(deviceList, map[string]any{
-			"id":        device.ID,
-			"name":      device.Name,
-			"mac":       device.MAC,
-			"ip":        device.IP,
-			"hostname":  device.Hostname,
-			"vendor":    device.Vendor,
-			"type":      string(device.Type),
-			"status":    device.Status,
-			"last_seen": device.LastSeen,
-			"source":    device.Source,
-		})
-	}
+	deviceList := h.convertDevicesToAPI(devices)
 
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, map[string]any{
@@ -125,18 +112,7 @@ func (h *APIHandler) GetDevicesByType(w http.ResponseWriter, r *http.Request) {
 	// Convert to API format
 	deviceList := make([]map[string]any, 0, len(devices))
 	for _, device := range devices {
-		deviceList = append(deviceList, map[string]any{
-			"id":        device.ID,
-			"name":      device.Name,
-			"mac":       device.MAC,
-			"ip":        device.IP,
-			"hostname":  device.Hostname,
-			"vendor":    device.Vendor,
-			"type":      string(device.Type),
-			"status":    device.Status,
-			"last_seen": device.LastSeen,
-			"source":    device.Source,
-		})
+		deviceList = append(deviceList, h.convertDeviceToAPI(device))
 	}
 
 	render.Status(r, http.StatusOK)
@@ -173,18 +149,7 @@ func (h *APIHandler) ScanDevices(w http.ResponseWriter, r *http.Request) {
 	// Convert to API format
 	deviceList := make([]map[string]any, 0, len(devices))
 	for _, device := range devices {
-		deviceList = append(deviceList, map[string]any{
-			"id":        device.ID,
-			"name":      device.Name,
-			"mac":       device.MAC,
-			"ip":        device.IP,
-			"hostname":  device.Hostname,
-			"vendor":    device.Vendor,
-			"type":      string(device.Type),
-			"status":    device.Status,
-			"last_seen": device.LastSeen,
-			"source":    device.Source,
-		})
+		deviceList = append(deviceList, h.convertDeviceToAPI(device))
 	}
 
 	render.Status(r, http.StatusOK)
@@ -238,18 +203,7 @@ func (h *APIHandler) GetDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, map[string]any{
-		"id":        device.ID,
-		"name":      device.Name,
-		"mac":       device.MAC,
-		"ip":        device.IP,
-		"hostname":  device.Hostname,
-		"vendor":    device.Vendor,
-		"type":      string(device.Type),
-		"status":    device.Status,
-		"last_seen": device.LastSeen,
-		"source":    device.Source,
-	})
+	render.JSON(w, r, h.convertDeviceToAPI(device))
 }
 
 // AddDevice adds a new device.
@@ -290,25 +244,16 @@ func (h *APIHandler) AddDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	result := h.convertDeviceToAPI(device)
+	result["message"] = "Device added successfully"
+
 	render.Status(r, http.StatusCreated)
-	render.JSON(w, r, map[string]any{
-		"id":        device.ID,
-		"name":      device.Name,
-		"mac":       device.MAC,
-		"ip":        device.IP,
-		"hostname":  device.Hostname,
-		"vendor":    device.Vendor,
-		"type":      string(device.Type),
-		"status":    device.Status,
-		"last_seen": device.LastSeen,
-		"source":    device.Source,
-		"message":   "Device added successfully",
-	})
+	render.JSON(w, r, result)
 }
 
 // UpdateDevice updates an existing device.
 //
-//nolint:funlen // complex device update logic
+
 func (h *APIHandler) UpdateDevice(w http.ResponseWriter, r *http.Request) {
 	if h.manager == nil {
 		render.Status(r, http.StatusInternalServerError)
@@ -360,20 +305,11 @@ func (h *APIHandler) UpdateDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	result := h.convertDeviceToAPI(device)
+	result["message"] = "Device updated successfully"
+
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, map[string]any{
-		"id":        device.ID,
-		"name":      device.Name,
-		"mac":       device.MAC,
-		"ip":        device.IP,
-		"hostname":  device.Hostname,
-		"vendor":    device.Vendor,
-		"type":      string(device.Type),
-		"status":    device.Status,
-		"last_seen": device.LastSeen,
-		"source":    device.Source,
-		"message":   "Device updated successfully",
-	})
+	render.JSON(w, r, result)
 }
 
 // DeleteDevice deletes a device.
@@ -421,6 +357,8 @@ func (h *APIHandler) WakeDevice(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	deviceID := vars["id"]
 
+	startTime := time.Now()
+
 	if err := h.manager.WakeDevice(r.Context(), deviceID); err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		render.JSON(w, r, map[string]string{
@@ -431,10 +369,15 @@ func (h *APIHandler) WakeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	duration := time.Since(startTime)
+
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, map[string]any{
-		"message": "Wake-on-LAN packet sent successfully",
-		"id":      deviceID,
+		"success":     true,
+		"message":     "Wake-on-LAN packet sent successfully",
+		"device_id":   deviceID,
+		"sent_at":     startTime.Format(time.RFC3339),
+		"duration_ms": duration.Milliseconds(),
 	})
 }
 
@@ -449,6 +392,8 @@ func (h *APIHandler) WakeAllDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	startTime := time.Now()
+
 	devices, err := h.manager.WakeAllDevices(r.Context())
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
@@ -459,14 +404,21 @@ func (h *APIHandler) WakeAllDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deviceList := h.convertDevicesToAPI(devices)
+	duration := time.Since(startTime)
+	// Convert to DeviceWakeResponse format for each device
+	wakeResponses := make([]map[string]any, 0, len(devices))
+	for _, device := range devices {
+		wakeResponses = append(wakeResponses, map[string]any{
+			"success":     true,
+			"message":     "Wake-on-LAN packet sent successfully",
+			"device_id":   device.ID,
+			"sent_at":     startTime.Format(time.RFC3339),
+			"duration_ms": duration.Milliseconds(),
+		})
+	}
 
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, map[string]any{
-		"message": "Wake-on-LAN packets sent to all wakeable devices",
-		"devices": deviceList,
-		"count":   len(deviceList),
-	})
+	render.JSON(w, r, wakeResponses)
 }
 
 // ResolveDevice resolves a device via DNS.
@@ -550,22 +502,33 @@ func (h *APIHandler) handleDeviceList(w http.ResponseWriter, r *http.Request, ge
 	})
 }
 
+// convertDeviceToAPI converts a single device to API format matching frontend expectations.
+func (h *APIHandler) convertDeviceToAPI(device *Device) map[string]any {
+	return map[string]any{
+		"id":          device.ID,
+		"name":        device.Name,
+		"mac":         device.MAC,
+		"ip":          device.IP,
+		"hostname":    device.Hostname,
+		"vendor":      device.Vendor,
+		"device_type": string(device.Type), // Frontend expects device_type, not type
+		"status":      device.Status,
+		"last_seen":   device.LastSeen.Format(time.RFC3339), // Format as ISO 8601 string
+		"source":      device.Source,
+		"capabilities": map[string]bool{
+			"can_wake":    device.CanBeWoken(),
+			"can_resolve": device.CanBeResolved(),
+		},
+		"created_at": device.CreatedAt.Format(time.RFC3339),
+		"updated_at": device.UpdatedAt.Format(time.RFC3339),
+	}
+}
+
 // convertDevicesToAPI converts device slice to API format.
 func (h *APIHandler) convertDevicesToAPI(devices []*Device) []map[string]any {
 	deviceList := make([]map[string]any, 0, len(devices))
 	for _, device := range devices {
-		deviceList = append(deviceList, map[string]any{
-			"id":        device.ID,
-			"name":      device.Name,
-			"mac":       device.MAC,
-			"ip":        device.IP,
-			"hostname":  device.Hostname,
-			"vendor":    device.Vendor,
-			"type":      string(device.Type),
-			"status":    device.Status,
-			"last_seen": device.LastSeen,
-			"source":    device.Source,
-		})
+		deviceList = append(deviceList, h.convertDeviceToAPI(device))
 	}
 
 	return deviceList

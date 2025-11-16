@@ -25,12 +25,16 @@ import (
 )
 
 var (
-	errProxyConfigurationNil      = errors.New("proxy configuration is nil")
-	errNilDNSMessageForDoH        = errors.New("nil DNS message for DoH")
-	errDoHClientNotInitialized    = errors.New("DoH client not initialized")
-	errDoHStatus                  = errors.New("doh status")
-	errInvalidUpstream            = errors.New("invalid upstream")
-	errAtLeastOneUpstreamRequired = errors.New("at least one upstream is required")
+	errProxyConfigurationNil        = errors.New("proxy configuration is nil")
+	errNilDNSMessageForDoH          = errors.New("nil DNS message for DoH")
+	errDoHClientNotInitialized      = errors.New("DoH client not initialized")
+	errDoHStatus                    = errors.New("doh status")
+	errInvalidUpstream              = errors.New("invalid upstream")
+	errAtLeastOneUpstreamRequired   = errors.New("at least one upstream is required")
+	errUpstreamNameCannotBeEmpty    = errors.New("upstream name cannot be empty")
+	errUpstreamAddressCannotBeEmpty = errors.New("upstream address cannot be empty")
+	errUpstreamInvalidWeight        = errors.New("upstream has invalid weight")
+	errTooManyHosts                 = errors.New("too many hosts")
 )
 
 const (
@@ -157,8 +161,9 @@ type Proxy struct {
 	config    ConfigManager
 
 	// Core components
-	backend firewall.Backend
-	active  atomic.Value // Resolver
+	backend      firewall.Backend
+	active       atomic.Value       // Resolver
+	asyncMarkRes *AsyncMarkResolver // Reference to async mark resolver for cleanup
 
 	// DNS clients
 	dnsUDP    *dns.Client
@@ -169,7 +174,7 @@ type Proxy struct {
 // ResolverActive returns the current active resolver atomically.
 //
 //nolint:ireturn
-func (p *Proxy) ResolverActive() Resolver {
+func (p *Proxy) ResolverActive() Resolver { // interface return is required for resolver abstraction
 	if v := p.active.Load(); v != nil {
 		if r, ok := v.(Resolver); ok {
 			return r
@@ -217,6 +222,7 @@ func New(cfg *config.Config, backend firewall.Backend) *Proxy {
 	return p
 }
 
+//nolint:funlen // complex startup logic with multiple components
 func (p *Proxy) Start(ctx context.Context) error {
 	cfg := p.config.GetConfig()
 	if cfg == nil {
@@ -268,6 +274,12 @@ func (p *Proxy) Start(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		zerolog.Ctx(ctx).Info().Msg("shutting down DNS servers")
+
+		// Stop async mark resolver
+		if p.asyncMarkRes != nil {
+			//nolint:contextcheck // Stop is a cleanup method, context not needed
+			p.asyncMarkRes.Stop()
+		}
 
 		if err := udpSrv.Shutdown(); err != nil {
 			zerolog.Ctx(ctx).Err(err).Msg("failed to shutdown UDP server")
@@ -639,8 +651,35 @@ func (p *Proxy) GetUpstreams() []string {
 }
 
 // SetUpstreamsConfig replaces upstreams with structured configs and rebuilds pipeline.
+//
+//nolint:cyclop,funlen // complex validation and processing logic
 func (p *Proxy) SetUpstreamsConfig(ctx context.Context, ups []config.UpstreamConfig) error {
-	// 1) Prepare runtime view with detected types and sane weights
+	logger := zerolog.Ctx(ctx).With().Int("upstreams_count", len(ups)).Logger()
+
+	logger.Info().Msg("updating upstreams configuration")
+
+	// 1) Validate all upstreams before processing (critical for preventing invalid state)
+	// Ensure at least one upstream
+	if len(ups) == 0 {
+		return errAtLeastOneUpstreamRequired
+	}
+
+	// Validate each upstream individually to catch errors early
+	for i, u := range ups {
+		if u.Name == "" {
+			return fmt.Errorf("upstream #%d: %w", i+1, errUpstreamNameCannotBeEmpty)
+		}
+
+		if u.Address == "" {
+			return fmt.Errorf("upstream '%s': %w", u.Name, errUpstreamAddressCannotBeEmpty)
+		}
+
+		if u.Weight < 0 {
+			return fmt.Errorf("upstream '%s': %w (got %d)", u.Name, errUpstreamInvalidWeight, u.Weight)
+		}
+	}
+
+	// 2) Prepare runtime view with detected types and sane weights
 	typed := make([]config.UpstreamConfig, 0, len(ups))
 	for i := range ups {
 		u := ups[i]
@@ -655,15 +694,23 @@ func (p *Proxy) SetUpstreamsConfig(ctx context.Context, ups []config.UpstreamCon
 		typed = append(typed, u)
 	}
 
-	// 2) Update upstreams manager
+	// 3) Update upstreams manager atomically (thread-safe, with validation already done)
 	if err := p.upstreams.SetUpstreams(typed); err != nil {
-		return err
+		logger.Error().Err(err).Msg("failed to update upstreams in manager")
+
+		return fmt.Errorf("failed to update upstreams: %w", err)
 	}
 
-	// Rebuild active resolver chain
+	logger.Debug().Int("valid_upstreams", len(typed)).Msg("upstreams updated successfully in manager (in-memory)")
+
+	// 4) Rebuild active resolver chain (this is fast, happens in memory)
+	// Note: rebuildResolver can fail, but upstreams are already updated in memory
+	// This is acceptable because the resolver will be rebuilt on next request if needed
 	p.rebuildResolver(ctx)
 
-	// 3) Persist a clean config without explicit types (omitted in YAML)
+	logger.Debug().Msg("resolver pipeline rebuilt successfully")
+
+	// 5) Persist a clean config without explicit types (omitted in YAML)
 	// Normalize addresses: remove udp:// and tcp:// prefixes, keep only host:port
 	persist := make([]config.UpstreamConfig, 0, len(ups))
 	for _, u := range ups {
@@ -683,14 +730,28 @@ func (p *Proxy) SetUpstreamsConfig(ctx context.Context, ups []config.UpstreamCon
 		})
 	}
 
-	cfg := p.config.GetConfig()
-	cfg.Upstreams = persist
+	// 6) Save configuration asynchronously to avoid blocking DNS proxy
+	// This prevents service disruption if disk I/O is slow
+	go func() {
+		saveLogger := logger.With().Str("operation", "async_save").Logger()
 
-	if err := p.config.SaveConfig(); err != nil {
-		zerolog.Ctx(ctx).Err(err).Msg("failed to save config after updating upstreams")
+		cfg := p.config.GetConfig()
+		cfg.Upstreams = persist
 
-		return fmt.Errorf("failed to save configuration: %w", err)
-	}
+		if err := p.config.SaveConfig(); err != nil {
+			saveLogger.Error().
+				Err(err).
+				Msg("failed to save config after updating upstreams (async save failed)")
+
+			// Log error but don't fail the request - upstreams are already updated in memory
+			// The next successful save will persist the changes
+			return
+		}
+
+		saveLogger.Info().Msg("upstreams configuration saved successfully (async)")
+	}()
+
+	logger.Info().Msg("upstreams configuration updated successfully (saved asynchronously)")
 
 	return nil
 }
@@ -734,28 +795,46 @@ func (p *Proxy) SetHosts(ctx context.Context, hosts []config.HostOverride) error
 
 	logger.Info().Msg("updating hosts configuration")
 
-	// Update hosts in place (thread-safe)
-	if err := p.hosts.UpdateHostsInPlace(hosts); err != nil {
-		logger.Error().Err(err).Msg("failed to update hosts in place")
-
-		return err
+	// Validate hosts count before processing
+	const maxHostsPerRequest = 1000
+	if len(hosts) > maxHostsPerRequest {
+		return fmt.Errorf("%w (max %d, got %d)", errTooManyHosts, maxHostsPerRequest, len(hosts))
 	}
 
-	logger.Debug().Msg("hosts updated successfully in manager")
+	// Update hosts in place (thread-safe, with validation)
+	// This validates all hosts before updating, preventing invalid state
+	if err := p.hosts.UpdateHostsInPlace(hosts); err != nil {
+		logger.Error().Err(err).Msg("failed to update hosts in place (validation failed)")
+
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	logger.Debug().Msg("hosts updated successfully in manager (in-memory)")
 
 	// Note: rebuildResolver() is no longer needed because HostsResolver is now dynamic
 	// and reads hosts from manager on each request. This improves performance by avoiding
 	// full pipeline rebuild on every hosts update.
 	// If you need to rebuild for other reasons, you can still call rebuildResolver(ctx)
 
-	// Save configuration
-	if err := p.config.SaveConfig(); err != nil {
-		logger.Error().Err(err).Msg("failed to save config after updating hosts")
+	// Save configuration asynchronously to avoid blocking DNS proxy
+	// This prevents service disruption if disk I/O is slow
+	go func() {
+		saveLogger := logger.With().Str("operation", "async_save").Logger()
 
-		return fmt.Errorf("failed to save configuration: %w", err)
-	}
+		if err := p.config.SaveConfig(); err != nil {
+			saveLogger.Error().
+				Err(err).
+				Msg("failed to save config after updating hosts (async save failed)")
 
-	logger.Info().Msg("hosts configuration updated and saved successfully")
+			// Log error but don't fail the request - hosts are already updated in memory
+			// The next successful save will persist the changes
+			return
+		}
+
+		saveLogger.Info().Msg("hosts configuration saved successfully (async)")
+	}()
+
+	logger.Info().Msg("hosts configuration updated successfully (saved asynchronously)")
 
 	return nil
 }

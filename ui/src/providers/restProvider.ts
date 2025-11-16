@@ -490,9 +490,9 @@ export class RESTProvider implements Provider {
   }
 
   async wakeDevice(request: DeviceWakeRequest): Promise<DeviceWakeResponse> {
+    // Backend expects only URL parameter, no body needed
     return this.fetchJSON(`/api/v1/devices/${request.id}/wake`, {
-      method: 'POST',
-      body: JSON.stringify(request)
+      method: 'POST'
     });
   }
 

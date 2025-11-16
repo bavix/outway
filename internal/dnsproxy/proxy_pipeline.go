@@ -77,13 +77,16 @@ func (p *Proxy) rebuildResolver(ctx context.Context) {
 	lanResolver := lanresolver.NewLANResolver(hosts, zoneDetector, leaseManager)
 	next := Resolver(lanResolver)
 
-	// Create mark resolver using managers
-	mark := &MarkResolver{
-		Next:    next,
-		Backend: p.backend,
-		Rules:   p.rules.GetRules(),
-		Cfg:     cfg,
-	}
+	// Create async mark resolver for better performance (non-blocking IP marking)
+	// This prevents DNS queries from being blocked by slow firewall operations
+	//nolint:contextcheck // NewAsyncMarkResolver doesn't need context, worker starts in background
+	mark := NewAsyncMarkResolver(
+		next,
+		p.backend,
+		p.rules.GetRules(),
+		cfg,
+	)
+	p.asyncMarkRes = mark
 
 	// Build core without metrics first so cache can wrap it
 	var core Resolver = mark
