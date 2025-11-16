@@ -62,6 +62,9 @@ export function useChart(options: UseChartOptions) {
           callbacks: {
             label: (context) => {
               const value = context.parsed.y;
+              if (value === null || value === undefined) {
+                return 'N/A';
+              }
               const isRPS = context.dataset.label === 'RPS';
               return isRPS 
                 ? `${value.toFixed(2)} rps` 

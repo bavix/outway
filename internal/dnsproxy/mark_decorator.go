@@ -19,6 +19,8 @@ type MarkResolver struct {
 	Cfg     *config.Config
 }
 
+// Resolve resolves DNS query and marks IPs synchronously (legacy implementation).
+// For better performance, use AsyncMarkResolver instead.
 func (m *MarkResolver) Resolve(ctx context.Context, q *dns.Msg) (*dns.Msg, string, error) { //nolint:cyclop,funlen
 	out, src, err := m.Next.Resolve(ctx, q)
 	if err != nil || out == nil || len(out.Answer) == 0 || m.Backend == nil || m.Rules == nil || q == nil || len(q.Question) == 0 {

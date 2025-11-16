@@ -753,16 +753,25 @@ func (dm *DeviceManager) Close() error {
 }
 
 func (dm *DeviceManager) loadFromDHCPLeases(ctx context.Context) []*Device {
+	logger := zerolog.Ctx(ctx)
+
 	if dm == nil || dm.leaseManager == nil {
+		logger.Debug().Msg("DeviceManager or LeaseManager is nil, skipping DHCP lease loading")
+
 		return []*Device{}
 	}
+
+	leasesPath := dm.leaseManager.GetLeasesPath()
+	logger.Debug().
+		Str("leases_path", leasesPath).
+		Msg("Attempting to load DHCP leases")
 
 	// Load leases from file first
 	if err := dm.leaseManager.LoadLeases(); err != nil {
 		// Log error but continue - file might not exist yet
 		// This is expected for OpenWrt and other systems
-		zerolog.Ctx(ctx).Debug().
-			Str("leases_path", dm.leaseManager.GetLeasesPath()).
+		logger.Debug().
+			Str("leases_path", leasesPath).
 			Err(err).
 			Msg("Failed to load DHCP leases, file might not exist yet")
 
@@ -771,32 +780,107 @@ func (dm *DeviceManager) loadFromDHCPLeases(ctx context.Context) []*Device {
 
 	leases := dm.leaseManager.GetAllLeases()
 
-	zerolog.Ctx(ctx).Debug().
-		Str("leases_path", dm.leaseManager.GetLeasesPath()).
+	logger.Info().
+		Str("leases_path", leasesPath).
 		Int("leases_count", len(leases)).
 		Msg("Loaded DHCP leases")
 
-	devices := make([]*Device, 0, len(dm.devices))
+	if len(leases) == 0 {
+		logger.Debug().
+			Str("leases_path", leasesPath).
+			Msg("No valid DHCP leases found (file might be empty or all leases expired)")
+
+		return []*Device{}
+	}
+
+	devices := make([]*Device, 0, len(leases))
+
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
 
 	for _, lease := range leases {
-		device := &Device{
-			ID:        dm.generateDeviceID(),
-			Name:      lease.Hostname,
-			MAC:       lease.MAC,
-			IP:        lease.IP,
-			Hostname:  lease.Hostname,
-			Status:    "online",
-			Source:    "dhcp",
-			Expire:    &lease.Expire,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			LastSeen:  time.Now(),
+		// Skip leases without MAC (shouldn't happen, but be safe)
+		if lease.MAC == "" {
+			logger.Debug().
+				Str("ip", lease.IP).
+				Msg("Skipping lease without MAC address")
+
+			continue
 		}
 
-		dm.updateDeviceCapabilities(device)
-		dm.devices[device.ID] = device
+		// Check if device already exists by MAC in existing devices
+		// (inline check to avoid deadlock since we already hold the lock)
+		var (
+			device         *Device
+			existingDevice *Device
+		)
+
+		exists := false
+
+		for _, d := range dm.devices {
+			if d.MAC == lease.MAC {
+				existingDevice = d
+				exists = true
+
+				break
+			}
+		}
+
+		if exists {
+			// Update existing device
+			device = existingDevice
+			device.IP = lease.IP
+			device.UpdatedAt = time.Now()
+
+			device.LastSeen = time.Now()
+			if lease.Hostname != "" && device.Hostname == "" {
+				device.Hostname = lease.Hostname
+				if device.Name == "" || device.Name == "Device-"+lease.IP || device.Name == "Device-"+lease.MAC {
+					device.Name = lease.Hostname
+				}
+			}
+
+			device.Expire = &lease.Expire
+			if device.Source != "manual" {
+				device.Source = "dhcp"
+			}
+		} else {
+			// Create new device
+			// Use hostname if available, otherwise use MAC or IP as name
+			name := lease.Hostname
+			if name == "" || name == "*" {
+				if lease.IP != "" {
+					name = "Device-" + lease.IP
+				} else {
+					name = "Device-" + lease.MAC
+				}
+			}
+
+			device = &Device{
+				ID:        dm.generateDeviceID(),
+				Name:      name,
+				MAC:       lease.MAC,
+				IP:        lease.IP,
+				Hostname:  lease.Hostname,
+				Status:    "online",
+				Source:    "dhcp",
+				Expire:    &lease.Expire,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+				LastSeen:  time.Now(),
+			}
+
+			dm.updateDeviceCapabilities(device)
+			dm.devices[device.ID] = device
+		}
+
 		devices = append(devices, device)
 	}
+
+	logger.Info().
+		Int("devices_loaded", len(devices)).
+		Int("leases_processed", len(leases)).
+		Msg("Devices loaded from DHCP leases")
 
 	return devices
 }

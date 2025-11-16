@@ -2,6 +2,7 @@ package dnsproxy
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/rs/zerolog"
@@ -132,6 +133,13 @@ func (hm *hostsManager) CreateHostsResolver(next Resolver, cfg *config.Config) *
 func (hm *hostsManager) UpdateHostsInPlace(hosts []config.HostOverride) error {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
+
+	// Validate all hosts before updating (critical for preventing invalid state)
+	for i, host := range hosts {
+		if err := host.Validate(); err != nil {
+			return fmt.Errorf("invalid host override #%d: %w", i+1, err)
+		}
+	}
 
 	// Update hosts atomically
 	hm.hosts = make([]config.HostOverride, len(hosts))
