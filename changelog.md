@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.4.4 - 2025-11-16
+
+### What's Changed
+
+* Bump golangci/golangci-lint-action from 8 to 9 by [@dependabot](https://github.com/dependabot)[bot] in https://github.com/bavix/outway/pull/70
+* Refactor device API handling and improve response formatting by [@rez1dent3](https://github.com/rez1dent3) in https://github.com/bavix/outway/pull/75
+
+**Full Changelog**: https://github.com/bavix/outway/compare/v1.4.3...v1.4.4
+
 ## v1.4.3 - 2025-11-15
 
 ### What's Changed
