@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.8.2",
-    "@storybook/addon-backgrounds": "^8.6.14",
+    "@storybook/addon-backgrounds": "^9.0.8",
     "@storybook/addon-controls": "^8.6.14",
     "@storybook/addon-docs": "^8.6.14",
     "@storybook/addon-essentials": "^8.6.14",
